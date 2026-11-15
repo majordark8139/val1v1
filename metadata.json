@@ -1,0 +1,8 @@
+{
+  "name": "PROJECT ASCENT: 1V1",
+  "description": "Competitive serverless 1v1 tactical shooter set on a 1:1 Ascent Mid replica with 60Hz deterministic kinematics, 9-segment compound OBB hitboxes, procedural Web Audio synthesis, and WebRTC P2P multiplayer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
