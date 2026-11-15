@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PHYSICS, TICK_DT } from '../config/Constants';
+import { BOT_DIFFICULTY_PROFILES, PHYSICS, TICK_DT } from '../config/Constants';
 import { applyShieldDamage, computeWeaponDamage, WEAPON_DATA } from '../config/WeaponData';
 import { HitboxRig } from '../entities/HitboxRig';
+import { RemotePlayer } from '../entities/RemotePlayer';
 import { CollisionWorld } from '../physics/CollisionWorld';
 import { applyTaggingSlow, createKinematicState, stepKinematics } from '../physics/Kinematics';
 import { RecoilController } from '../weapons/RecoilController';
@@ -176,4 +177,31 @@ test('RecoilController: 3-stage climb and linear spray recovery reset', () => {
   }
   assert.equal(rec.recoilIndex, 0);
   assert.equal(rec.currentPitchDeg, 0);
+});
+
+test('BotDifficulty: Easy and Medium profiles have fairer reaction times, dispersion, and chest aim bias', () => {
+  assert.ok(BOT_DIFFICULTY_PROFILES.EASY.reactionSec > BOT_DIFFICULTY_PROFILES.MEDIUM.reactionSec);
+  assert.ok(BOT_DIFFICULTY_PROFILES.MEDIUM.reactionSec > BOT_DIFFICULTY_PROFILES.HARD.reactionSec);
+  assert.ok(BOT_DIFFICULTY_PROFILES.EASY.aimJitter > BOT_DIFFICULTY_PROFILES.MEDIUM.aimJitter);
+  assert.ok(BOT_DIFFICULTY_PROFILES.MEDIUM.aimJitter > BOT_DIFFICULTY_PROFILES.HARD.aimJitter);
+
+  const world = new CollisionWorld();
+  world.setBarriersActive(false);
+  const bot = new RemotePlayer();
+  bot.isBot = true;
+  bot.resetForRound(0, 0, 10, 0, false, 1, false, 'EASY');
+
+  let firedEarly = false;
+  for (let i = 0; i < 30; i++) {
+    bot.stepBotAI(
+      { x: 0, y: 0, z: 0, yaw: Math.PI, pitch: 0, crouchAlpha: 0 },
+      world,
+      true,
+      TICK_DT,
+      () => {
+        firedEarly = true;
+      }
+    );
+  }
+  assert.equal(firedEarly, false, 'Easy bot must respect 0.78s reaction delay before firing');
 });

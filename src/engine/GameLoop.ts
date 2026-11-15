@@ -56,7 +56,7 @@ export class GameLoop {
     if (this.isSoftwareGl) {
       this.afterDraw(() => {
         if (this.running) {
-          this.rafId = requestAnimationFrame(this.tick);
+          this.tick(performance.now());
         }
       });
     } else {
@@ -109,9 +109,9 @@ export class GameLoop {
     const execMs = performance.now() - renderStart;
 
     this.fpsSamples++;
-    this.fpsAccum += rawFrameTime;
+    this.fpsAccum += Math.min(rawFrameTime, 0.25);
     if (this.fpsAccum >= 0.5) {
-      this.measuredFps = Math.round(this.fpsSamples / this.fpsAccum);
+      this.measuredFps = Math.max(1, Math.round(this.fpsSamples / this.fpsAccum));
       this.measuredFrameMs = Math.round((execMs + Number.EPSILON) * 10) / 10;
       this.fpsSamples = 0;
       this.fpsAccum = 0;

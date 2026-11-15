@@ -194,8 +194,27 @@ export const SettingsModal: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Gameplay Toggles */}
+            {/* Gameplay & Bot Toggles */}
             <div className="flex flex-col gap-2.5 pt-2">
+              <div className="flex items-center justify-between text-xs text-slate-200">
+                <span>Bot Difficulty</span>
+                <div className="grid grid-cols-3 border border-white/15 bg-[#090d14]">
+                  {(['EASY', 'MEDIUM', 'HARD'] as const).map((diff) => (
+                    <button
+                      key={diff}
+                      type="button"
+                      onClick={() => onChange({ ...settings, botDifficulty: diff })}
+                      className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                        settings.botDifficulty === diff
+                          ? 'bg-[#00f5d4] text-[#090d14]'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      {diff === 'EASY' ? 'Easy' : diff === 'MEDIUM' ? 'Medium' : 'Hard'}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
                 <span>Operator Auto-Rescope After Bolt Cycle</span>
                 <input

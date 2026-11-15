@@ -71,11 +71,58 @@ export interface CrosshairSettings {
   dynamicError: boolean;
 }
 
+export type BotDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+
+export interface BotDifficultyProfile {
+  label: string;
+  reactionSec: number;
+  yawLerpRate: number;
+  aimJitter: number;
+  aimChestOffset: number;
+  burstLimit: number;
+  burstCooldown: number;
+  maxBuyTier: 'SMG' | 'RIFLE' | 'SNIPER';
+}
+
+export const BOT_DIFFICULTY_PROFILES: Record<BotDifficulty, BotDifficultyProfile> = {
+  EASY: {
+    label: 'Easy',
+    reactionSec: 0.78,
+    yawLerpRate: 5.0,
+    aimJitter: 0.135,
+    aimChestOffset: 0.30,
+    burstLimit: 2,
+    burstCooldown: 0.95,
+    maxBuyTier: 'SMG',
+  },
+  MEDIUM: {
+    label: 'Medium',
+    reactionSec: 0.48,
+    yawLerpRate: 8.2,
+    aimJitter: 0.072,
+    aimChestOffset: 0.22,
+    burstLimit: 2,
+    burstCooldown: 0.65,
+    maxBuyTier: 'RIFLE',
+  },
+  HARD: {
+    label: 'Hard',
+    reactionSec: 0.25,
+    yawLerpRate: 12.5,
+    aimJitter: 0.028,
+    aimChestOffset: 0.06,
+    burstLimit: 3,
+    burstCooldown: 0.42,
+    maxBuyTier: 'SNIPER',
+  },
+};
+
 export interface PlayerSettings {
   sensitivity: number;
   dpi: number;
   autoRescope: boolean;
   muted: boolean;
+  botDifficulty: BotDifficulty;
   crosshair: CrosshairSettings;
 }
 
@@ -84,6 +131,7 @@ export const DEFAULT_SETTINGS: PlayerSettings = {
   dpi: 800,
   autoRescope: true,
   muted: false,
+  botDifficulty: 'MEDIUM',
   crosshair: {
     color: '#00f5d4',
     length: 6,

@@ -50,7 +50,9 @@ export const HUDManager: React.FC<Props> = ({
             {hud.localIsAttacker ? 'ATTACKER SIDE' : 'DEFENDER SIDE'}
           </span>
           <span className="text-xs text-slate-300">
-            {hud.mode === 'BOT' ? 'Practice vs Bot' : `Room ${hud.roomCode}`}
+            {hud.mode === 'BOT'
+              ? `Practice vs Bot · ${hud.botDifficulty.charAt(0) + hud.botDifficulty.slice(1).toLowerCase()}`
+              : `Room ${hud.roomCode}`}
           </span>
         </div>
 

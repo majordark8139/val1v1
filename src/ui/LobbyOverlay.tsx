@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { BotDifficulty } from '../config/Constants';
 import { HudState } from '../engine/MatchEngine';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   onJoinMatch: (code: string) => void;
   onSetFormat: (fmt: 'BO5' | 'MR12') => void;
   onSetAimDuel: (free: boolean) => void;
+  onSetBotDifficulty: (diff: BotDifficulty) => void;
   onOpenSettings: () => void;
   onReturnToLobby: () => void;
 }
@@ -21,6 +23,7 @@ export const LobbyOverlay: React.FC<Props> = ({
   onJoinMatch,
   onSetFormat,
   onSetAimDuel,
+  onSetBotDifficulty,
   onOpenSettings,
   onReturnToLobby,
 }) => {
@@ -207,6 +210,29 @@ export const LobbyOverlay: React.FC<Props> = ({
                 All Free
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Bot Difficulty Selector */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+            Bot Difficulty
+          </span>
+          <div className="grid grid-cols-3 border border-white/15 bg-[#090d14]">
+            {(['EASY', 'MEDIUM', 'HARD'] as const).map((diff) => (
+              <button
+                key={diff}
+                type="button"
+                onClick={() => onSetBotDifficulty(diff)}
+                className={`py-1.5 text-xs font-semibold transition-colors ${
+                  hud.botDifficulty === diff
+                    ? 'bg-[#00f5d4] text-[#090d14]'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {diff === 'EASY' ? 'Easy' : diff === 'MEDIUM' ? 'Medium' : 'Hard'}
+              </button>
+            ))}
           </div>
         </div>
 

@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { MATCH_CONFIG, PHYSICS, TICK_DT } from '../config/Constants';
+import {
+  BOT_DIFFICULTY_PROFILES,
+  BotDifficulty,
+  MATCH_CONFIG,
+  PHYSICS,
+  TICK_DT,
+} from '../config/Constants';
 import { WEAPON_DATA, WeaponId } from '../config/WeaponData';
 import { CollisionWorld, WorldRayHit } from '../physics/CollisionWorld';
 import {
@@ -84,6 +90,7 @@ export class RemotePlayer {
 
   // Offline Bot AI state
   public isBot = false;
+  public botDifficulty: BotDifficulty = 'MEDIUM';
   private botPolicy: 'CATWALK' | 'COURTYARD' | 'MARKET' = 'COURTYARD';
   private botWaypointIdx = 0;
   private botStrafeDir = 1;
@@ -92,6 +99,7 @@ export class RemotePlayer {
   private botReactionTimer = 0;
   private botBurstCount = 0;
   private botCrouchRoll = false;
+  private botSwayPhase = 0;
   private readonly botRayHit: WorldRayHit = {
     hit: false,
     distance: 0,
@@ -111,8 +119,10 @@ export class RemotePlayer {
     yaw: number,
     isAttacker: boolean,
     roundNum: number,
-    aimDuelFree: boolean
+    aimDuelFree: boolean,
+    botDifficulty: BotDifficulty = this.botDifficulty
   ): void {
+    this.botDifficulty = botDifficulty;
     this.state = createKinematicState(x, y, z, yaw);
     this.hp = 100;
     this.alive = true;
@@ -128,10 +138,19 @@ export class RemotePlayer {
     }
 
     if (this.isBot) {
-      // Bot buys competitively based on credits or aimDuelFree
+      const profile = BOT_DIFFICULTY_PROFILES[this.botDifficulty];
+      // Bot buys competitively based on credits, aimDuelFree, and difficulty tier
       if (aimDuelFree) {
-        this.weaponId = roundNum % 4 === 0 ? 'OPERATOR' : roundNum % 2 === 0 ? 'PHANTOM' : 'VANDAL';
-        this.shield = MATCH_CONFIG.HEAVY_SHIELD_AMOUNT;
+        if (profile.maxBuyTier === 'SMG') {
+          this.weaponId = roundNum % 2 === 0 ? 'SPECTRE' : 'GHOST';
+          this.shield = MATCH_CONFIG.LIGHT_SHIELD_AMOUNT;
+        } else if (profile.maxBuyTier === 'RIFLE') {
+          this.weaponId = roundNum % 2 === 0 ? 'PHANTOM' : 'VANDAL';
+          this.shield = MATCH_CONFIG.HEAVY_SHIELD_AMOUNT;
+        } else {
+          this.weaponId = roundNum % 4 === 0 ? 'OPERATOR' : roundNum % 2 === 0 ? 'PHANTOM' : 'VANDAL';
+          this.shield = MATCH_CONFIG.HEAVY_SHIELD_AMOUNT;
+        }
       } else {
         this.botBuyLoadout();
       }
@@ -141,12 +160,13 @@ export class RemotePlayer {
       const policies: ('CATWALK' | 'COURTYARD' | 'MARKET')[] = ['COURTYARD', 'CATWALK', 'MARKET'];
       this.botPolicy = policies[roundNum % policies.length];
       this.botWaypointIdx = 0;
-      this.botFireCooldown = 0.35;
-      this.botReactionTimer = 0.22;
+      this.botFireCooldown = 0.45;
+      this.botReactionTimer = profile.reactionSec;
       this.botBurstCount = 0;
       this.botCrouchRoll = false;
       this.botStrafeDir = roundNum % 2 === 0 ? 1 : -1;
       this.botStrafeTimer = 0.9;
+      this.botSwayPhase = roundNum * 1.3;
     }
 
     this.syncRigVisuals(true);
@@ -154,12 +174,13 @@ export class RemotePlayer {
   }
 
   private botBuyLoadout(): void {
-    if (this.credits >= 3900) {
+    const profile = BOT_DIFFICULTY_PROFILES[this.botDifficulty];
+    if (profile.maxBuyTier !== 'SMG' && this.credits >= 3900) {
       this.weaponId = Math.random() < 0.5 ? 'VANDAL' : 'PHANTOM';
       this.credits -= 2900;
       this.shield = MATCH_CONFIG.HEAVY_SHIELD_AMOUNT;
       this.credits -= 1000;
-    } else if (this.credits >= 2900) {
+    } else if (profile.maxBuyTier !== 'SMG' && this.credits >= 2900) {
       this.weaponId = 'VANDAL';
       this.credits -= 2900;
       if (this.credits >= 400) {
@@ -171,7 +192,7 @@ export class RemotePlayer {
       this.credits -= 1600;
       this.shield = MATCH_CONFIG.LIGHT_SHIELD_AMOUNT;
       this.credits -= 400;
-    } else if (this.credits >= 800) {
+    } else if (profile.maxBuyTier !== 'SMG' && this.credits >= 800) {
       this.weaponId = 'SHERIFF';
       this.credits -= 800;
     } else if (this.credits >= 500) {
@@ -327,11 +348,14 @@ export class RemotePlayer {
       return { stepFootstep: false };
     }
 
+    const profile = BOT_DIFFICULTY_PROFILES[this.botDifficulty];
+    this.botSwayPhase += dt * 3.1;
+
     const eyeY = this.state.y + getEyeHeight(this.state.crouchAlpha);
-    const targetEyeY = targetPose.y + getEyeHeight(targetPose.crouchAlpha);
+    const targetAimY = targetPose.y + getEyeHeight(targetPose.crouchAlpha) - profile.aimChestOffset;
 
     const toTargetX = targetPose.x - this.state.x;
-    const toTargetY = targetEyeY - eyeY;
+    const toTargetY = targetAimY - eyeY;
     const toTargetZ = targetPose.z - this.state.z;
     const distToPlayer = Math.sqrt(
       toTargetX * toTargetX + toTargetY * toTargetY + toTargetZ * toTargetZ
@@ -368,24 +392,23 @@ export class RemotePlayer {
 
     if (!canFight) {
       // Wait behind buy barrier
-      this.state.yaw = lerpAngle(this.state.yaw, aimYaw, dt * 8);
+      this.state.yaw = lerpAngle(this.state.yaw, aimYaw, dt * 6);
       this.state.pitch = 0;
     } else if (hasLOS) {
-      this.state.yaw = lerpAngle(this.state.yaw, aimYaw, dt * 14);
-      this.state.pitch = aimPitch;
+      this.state.yaw = lerpAngle(this.state.yaw, aimYaw, dt * profile.yawLerpRate);
+      this.state.pitch = this.state.pitch + (aimPitch - this.state.pitch) * Math.min(1, dt * profile.yawLerpRate);
 
       this.botReactionTimer = Math.max(0, this.botReactionTimer - dt);
       this.botFireCooldown = Math.max(0, this.botFireCooldown - dt);
       this.botStrafeTimer -= dt;
       if (this.botStrafeTimer <= 0) {
         this.botStrafeDir *= -1;
-        this.botStrafeTimer = 0.45 + Math.random() * 0.55;
-        this.botCrouchRoll = Math.random() < 0.25;
+        this.botStrafeTimer = 0.6 + Math.random() * 0.7;
+        this.botCrouchRoll = this.botDifficulty === 'HARD' && Math.random() < 0.25;
       }
 
-      // Counter-strafe stop-and-shoot rhythm!
-      if (this.botFireCooldown <= 0.08 && this.botReactionTimer <= 0) {
-        // Stop moving to enter Deadzone before firing
+      // Counter-strafe stop-and-shoot rhythm
+      if (this.botFireCooldown <= 0.1 && this.botReactionTimer <= 0) {
         fwd = 0;
         right = 0;
         crouch = this.botCrouchRoll;
@@ -398,11 +421,12 @@ export class RemotePlayer {
       if (this.botReactionTimer <= 0 && this.botFireCooldown <= 0) {
         const spec = WEAPON_DATA[this.weaponId];
         if (this.state.isInDeadzone) {
-          // Aim error scaled so Bot feels competitive yet fair
-          const aimJitter = (this.weaponId === 'OPERATOR' ? 0.012 : 0.022) + this.botBurstCount * 0.008;
-          const jx = (Math.random() - 0.5) * aimJitter;
-          const jy = (Math.random() - 0.5) * aimJitter;
-          const jz = (Math.random() - 0.5) * aimJitter;
+          // Human-like angular dispersion + gentle tracking sway scaled by difficulty
+          const sway = Math.sin(this.botSwayPhase) * (profile.aimJitter * 0.35);
+          const aimJitter = profile.aimJitter + this.botBurstCount * (profile.aimJitter * 0.25);
+          const jx = (Math.random() - 0.5) * aimJitter + sway;
+          const jy = (Math.random() - 0.5) * (aimJitter * 0.75);
+          const jz = (Math.random() - 0.5) * aimJitter - sway * 0.5;
           const len = Math.sqrt(
             (dirX + jx) ** 2 + (dirY + jy) ** 2 + (dirZ + jz) ** 2
           );
@@ -412,17 +436,17 @@ export class RemotePlayer {
             this.weaponId
           );
           this.botBurstCount++;
-          if (this.botBurstCount >= (spec.fireMode === 'AUTO' ? 3 : 1)) {
+          if (this.botBurstCount >= (spec.fireMode === 'AUTO' ? profile.burstLimit : 1)) {
             this.botBurstCount = 0;
-            this.botFireCooldown = spec.fireMode === 'BOLT' ? 1.85 : 0.42;
+            this.botFireCooldown = spec.fireMode === 'BOLT' ? 2.15 : profile.burstCooldown;
           } else {
-            this.botFireCooldown = 60 / spec.fireRateRPM;
+            this.botFireCooldown = Math.max(0.11, 60 / spec.fireRateRPM);
           }
         }
       }
     } else {
       // Navigate Ascent Mid waypoints based on policy
-      this.botReactionTimer = 0.24;
+      this.botReactionTimer = profile.reactionSec;
       this.botBurstCount = 0;
       const waypoints =
         this.botPolicy === 'CATWALK'

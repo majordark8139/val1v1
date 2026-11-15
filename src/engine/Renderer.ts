@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { CAMERA_CONFIG } from '../config/Constants';
 
 export function detectSoftwareWebGL(): boolean {
@@ -25,9 +26,29 @@ export interface TacticalRendererContext {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   isSoftwareGl: boolean;
+  maxAnisotropy: number;
   resize: (width: number, height: number) => void;
   renderFrame: () => void;
   dispose: () => void;
+}
+
+function createSkyDomeTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 16;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0.0, '#2c6aa0'); // Deep Mediterranean zenith
+  grad.addColorStop(0.38, '#5ea1d4'); // Crisp mid sky
+  grad.addColorStop(0.55, '#9cd0ee'); // Warm bright horizon
+  grad.addColorStop(0.68, '#dce9f2'); // Ground haze below horizon
+  grad.addColorStop(1.0, '#8e9ba6');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 16, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.encoding = THREE.sRGBEncoding;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 export function createTacticalRenderer(
@@ -38,16 +59,20 @@ export function createTacticalRenderer(
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: false,
+    antialias: !isSoftwareGl,
     alpha: false,
     stencil: false,
     depth: true,
     powerPreference: 'high-performance',
-    precision: 'mediump',
+    precision: isSoftwareGl ? 'mediump' : 'highp',
   });
 
-  renderer.setPixelRatio(1.0);
-  renderer.shadowMap.enabled = false;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.94;
+  renderer.setPixelRatio(isSoftwareGl ? 1.0 : Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = !isSoftwareGl;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.autoClear = false;
 
   const width = canvas.clientWidth || window.innerWidth || 1280;
@@ -55,21 +80,71 @@ export function createTacticalRenderer(
   renderer.setSize(width, height, false);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x8ecae6);
-  scene.fog = new THREE.Fog(0x8ecae6, 55, 110);
+  scene.background = new THREE.Color(0x9cd0ee);
+  scene.fog = new THREE.Fog(0xb9daee, 75, 175);
 
-  // Exactly 1 AmbientLight + 1 static DirectionalLight (shadows disabled)
-  const ambient = new THREE.AmbientLight(0xffffff, 0.68);
-  const dirLight = new THREE.DirectionalLight(0xfff8e7, 0.52);
-  dirLight.position.set(40, 80, -30);
-  scene.add(ambient);
-  scene.add(dirLight);
+  // Studio / Sky Environment IBL for metallic weapons, optics, and catwalk steel
+  let envRT: THREE.WebGLRenderTarget | null = null;
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const roomEnv = new RoomEnvironment();
+    envRT = pmrem.fromScene(roomEnv, 0.04);
+    scene.environment = envRT.texture;
+    roomEnv.traverse((obj) => {
+      const m = obj as THREE.Mesh;
+      if (m.isMesh) {
+        m.geometry?.dispose();
+        if (Array.isArray(m.material)) {
+          m.material.forEach((mat) => mat.dispose());
+        } else {
+          m.material?.dispose();
+        }
+      }
+    });
+    pmrem.dispose();
+  } catch {
+    // Fallback safely if PMREM unavailable
+  }
+
+  // Lightweight Procedural Mediterranean Sky Dome
+  const skyTex = createSkyDomeTexture();
+  const skyGeo = new THREE.SphereGeometry(190, 20, 14);
+  const skyMat = new THREE.MeshBasicMaterial({
+    map: skyTex,
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  scene.add(sky);
+
+  // Warm golden-hour key sunlight + cool sky/warm terracotta bounce HemisphereLight
+  const hemiLight = new THREE.HemisphereLight(0x9cd2fa, 0x7a6552, 0.56);
+  scene.add(hemiLight);
+
+  const sunPhi = THREE.MathUtils.degToRad(90 - 38);
+  const sunTheta = THREE.MathUtils.degToRad(58);
+  const sunPos = new THREE.Vector3().setFromSphericalCoords(1, sunPhi, sunTheta);
+  const sunLight = new THREE.DirectionalLight(0xffe9c7, 0.96);
+  sunLight.position.set(sunPos.x * 60, sunPos.y * 60, sunPos.z * 60);
+  if (!isSoftwareGl) {
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 140;
+    sunLight.shadow.camera.left = -38;
+    sunLight.shadow.camera.right = 38;
+    sunLight.shadow.camera.top = 38;
+    sunLight.shadow.camera.bottom = -38;
+    sunLight.shadow.bias = -0.0005;
+  }
+  scene.add(sunLight);
 
   const camera = new THREE.PerspectiveCamera(
     CAMERA_CONFIG.DEFAULT_VFOV,
     width / Math.max(1, height),
     0.05,
-    180
+    240
   );
   camera.rotation.order = 'YXZ';
   scene.add(camera);
@@ -79,7 +154,11 @@ export function createTacticalRenderer(
     onContextLost?.();
   };
   const handleContextRestored = () => {
-    renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || window.innerHeight, false);
+    renderer.setSize(
+      canvas.clientWidth || window.innerWidth,
+      canvas.clientHeight || window.innerHeight,
+      false
+    );
   };
   canvas.addEventListener('webglcontextlost', handleContextLost);
   canvas.addEventListener('webglcontextrestored', handleContextRestored);
@@ -89,6 +168,7 @@ export function createTacticalRenderer(
     scene,
     camera,
     isSoftwareGl,
+    maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
     resize: (w: number, h: number) => {
       const safeW = Math.max(1, w);
       const safeH = Math.max(1, h);
@@ -103,6 +183,10 @@ export function createTacticalRenderer(
     dispose: () => {
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
+      envRT?.dispose();
+      skyTex.dispose();
+      sky.geometry.dispose();
+      skyMat.dispose();
       renderer.dispose();
     },
   };

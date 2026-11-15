@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  BotDifficulty,
   DEFAULT_SETTINGS,
   MATCH_CONFIG,
   PlayerSettings,
@@ -84,6 +85,7 @@ export interface HudState {
   pingMs: number;
   matchFormat: 'BO5' | 'MR12';
   aimDuelFree: boolean;
+  botDifficulty: BotDifficulty;
   winnerText: string;
   matchStats: {
     kills: number;
@@ -203,7 +205,7 @@ export class MatchEngine {
     this.onCrosshairEvent = callbacks.onCrosshairEvent;
 
     this.rendererCtx = createTacticalRenderer(canvas);
-    this.materials = createProceduralMaterials();
+    this.materials = createProceduralMaterials(this.rendererCtx.maxAnisotropy);
     this.map = buildAscentMidMap(this.materials);
     this.rendererCtx.scene.add(this.map.group);
 
@@ -292,12 +294,20 @@ export class MatchEngine {
     this.settings = next;
     this.input.sensitivity = next.sensitivity;
     this.localPlayer.weapons.autoRescope = next.autoRescope;
+    this.remotePlayer.botDifficulty = next.botDifficulty;
     this.audio.setMuted(next.muted);
     try {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
     } catch {
       // Ignore
     }
+    if (this.loop) {
+      this.emitHud();
+    }
+  }
+
+  public setBotDifficulty(diff: BotDifficulty): void {
+    this.applySettings({ ...this.settings, botDifficulty: diff });
   }
 
   public setMatchFormat(fmt: 'BO5' | 'MR12'): void {
@@ -488,7 +498,8 @@ export class MatchEngine {
       remoteSpawn.yaw,
       !localIsAtk,
       this.roundNum,
-      this.aimDuelFree
+      this.aimDuelFree,
+      this.settings.botDifficulty
     );
 
     this.audio.playRoundHorn(false);
@@ -1450,11 +1461,12 @@ export class MatchEngine {
       scopeLevel: this.localPlayer.weapons.scopeLevel,
       isInDeadzone: this.localPlayer.state.isInDeadzone,
       buyMenuOpen: this.buyMenuOpen,
-      fps: this.loop.measuredFps,
-      frameMs: this.loop.measuredFrameMs,
+      fps: this.loop?.measuredFps ?? 60,
+      frameMs: this.loop?.measuredFrameMs ?? 4.0,
       pingMs: this.mode === 'BOT' ? 0 : this.network.rttMs,
       matchFormat: this.matchFormat,
       aimDuelFree: this.aimDuelFree,
+      botDifficulty: this.settings.botDifficulty,
       winnerText,
       matchStats: {
         kills: this.localPlayer.kills,

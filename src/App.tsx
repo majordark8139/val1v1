@@ -33,6 +33,7 @@ const INITIAL_HUD: HudState = {
   pingMs: 0,
   matchFormat: 'BO5',
   aimDuelFree: false,
+  botDifficulty: 'MEDIUM',
   winnerText: '',
   matchStats: { kills: 0, deaths: 0, headshots: 0, totalDamage: 0 },
   killFeed: [],
@@ -146,6 +147,10 @@ export default function App() {
         onJoinMatch={(code) => engineRef.current?.network.joinMatch(code)}
         onSetFormat={(fmt) => engineRef.current?.setMatchFormat(fmt)}
         onSetAimDuel={(free) => engineRef.current?.setAimDuelFree(free)}
+        onSetBotDifficulty={(diff) => {
+          engineRef.current?.setBotDifficulty(diff);
+          if (engineRef.current) setSettings({ ...engineRef.current.settings });
+        }}
         onOpenSettings={() => setLobbySettingsOpen(true)}
         onReturnToLobby={() => engineRef.current?.returnToLobby()}
       />

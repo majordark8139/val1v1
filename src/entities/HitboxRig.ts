@@ -158,8 +158,8 @@ export class HitboxRig {
 
   // Optional visual Three.js hierarchy
   public group: THREE.Group | null = null;
-  private segmentMeshes: THREE.Mesh[] = [];
-  private segmentMaterials: THREE.MeshLambertMaterial[] = [];
+  private segmentAnchors: THREE.Group[] = [];
+  private segmentMaterials: THREE.MeshStandardMaterial[] = [];
   private contactShadow: THREE.Mesh | null = null;
   private hitFlashTimer = 0;
 
@@ -180,38 +180,213 @@ export class HitboxRig {
 
   private buildVisualGroup(): void {
     const group = new THREE.Group();
-    const edgeMat = new THREE.LineBasicMaterial({ color: 0x0b0e14 });
+
+    const srgb = (hex: number) => new THREE.Color(hex).convertSRGBToLinear();
+
+    const matHelmet = new THREE.MeshStandardMaterial({
+      color: srgb(0x262d38),
+      roughness: 0.42,
+      metalness: 0.45,
+      envMapIntensity: 0.65,
+    });
+    const matVisor = new THREE.MeshStandardMaterial({
+      color: srgb(0xff4d6d),
+      emissive: srgb(0xff2e54),
+      emissiveIntensity: 0.65,
+      roughness: 0.18,
+      metalness: 0.4,
+    });
+    const matMask = new THREE.MeshStandardMaterial({
+      color: srgb(0x161b22),
+      roughness: 0.82,
+      metalness: 0.15,
+      envMapIntensity: 0.3,
+    });
+    const matJacket = new THREE.MeshStandardMaterial({
+      color: srgb(0xb92b3a),
+      roughness: 0.82,
+      metalness: 0.06,
+      envMapIntensity: 0.3,
+    });
+    const matArmor = new THREE.MeshStandardMaterial({
+      color: srgb(0x1d232d),
+      roughness: 0.55,
+      metalness: 0.42,
+      envMapIntensity: 0.5,
+    });
+    const matTrim = new THREE.MeshStandardMaterial({
+      color: srgb(0xd9a44e),
+      roughness: 0.32,
+      metalness: 0.78,
+    });
+    const matPants = new THREE.MeshStandardMaterial({
+      color: srgb(0x222938),
+      roughness: 0.86,
+      metalness: 0.05,
+      envMapIntensity: 0.25,
+    });
+    const matBoots = new THREE.MeshStandardMaterial({
+      color: srgb(0x12151b),
+      roughness: 0.7,
+      metalness: 0.18,
+      envMapIntensity: 0.3,
+    });
+    const matGun = new THREE.MeshStandardMaterial({
+      color: srgb(0x2d333d),
+      roughness: 0.35,
+      metalness: 0.78,
+    });
+
+    this.segmentMaterials.push(
+      matHelmet,
+      matVisor,
+      matMask,
+      matJacket,
+      matArmor,
+      matTrim,
+      matPants,
+      matBoots,
+      matGun
+    );
+
+    const addPart = (
+      parent: THREE.Object3D,
+      geo: THREE.BufferGeometry,
+      mat: THREE.Material,
+      x: number,
+      y: number,
+      z: number,
+      rx = 0,
+      ry = 0,
+      rz = 0
+    ) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, ry, rz);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    };
 
     for (let i = 0; i < HITBOX_SEGMENTS.length; i++) {
       const seg = HITBOX_SEGMENTS[i];
-      const geo = new THREE.BoxGeometry(seg.size[0], seg.size[1], seg.size[2]);
-      const mat = new THREE.MeshLambertMaterial({ color: seg.color });
-      const mesh = new THREE.Mesh(geo, mat);
-      const edges = new THREE.EdgesGeometry(geo, 15);
-      const line = new THREE.LineSegments(edges, edgeMat);
-      mesh.add(line);
+      const anchor = new THREE.Group();
 
-      // Add high-visibility gold visor trim on HEAD_CRANIUM for instant silhouette readability
       if (seg.id === 'HEAD_CRANIUM') {
-        const visorGeo = new THREE.BoxGeometry(seg.size[0] + 0.015, 0.055, 0.06);
-        const visorMat = new THREE.MeshBasicMaterial({ color: 0xfff3b0 });
-        const visor = new THREE.Mesh(visorGeo, visorMat);
-        visor.position.set(0, 0.02, -seg.size[2] * 0.42);
-        mesh.add(visor);
+        // Sculpted tactical helmet dome + brow shield + panoramic crimson visor + ear comms
+        const dome = new THREE.SphereGeometry(0.112, 14, 12);
+        dome.scale(0.95, 1.04, 1.08);
+        addPart(anchor, dome, matHelmet, 0, 0.005, 0.005);
+
+        const brow = new THREE.CylinderGeometry(0.115, 0.118, 0.036, 12, 1, false, Math.PI * 0.65, Math.PI * 0.7);
+        addPart(anchor, brow, matArmor, 0, 0.04, -0.01);
+
+        const visor = new THREE.BoxGeometry(0.165, 0.048, 0.045);
+        addPart(anchor, visor, matVisor, 0, -0.01, -0.098);
+
+        for (const sx of [-1, 1]) {
+          const ear = new THREE.CylinderGeometry(0.034, 0.034, 0.03, 10);
+          ear.rotateZ(Math.PI * 0.5);
+          addPart(anchor, ear, matTrim, sx * 0.105, -0.01, 0.01);
+        }
+      } else if (seg.id === 'HEAD_JAW_NECK') {
+        // Respirator jawline + neck gaiter
+        const neck = new THREE.CylinderGeometry(0.056, 0.068, 0.11, 10);
+        addPart(anchor, neck, matMask, 0, -0.015, 0.0);
+        const mask = new THREE.CylinderGeometry(0.068, 0.058, 0.075, 10);
+        addPart(anchor, mask, matArmor, 0, 0.03, -0.015);
+      } else if (seg.id === 'TORSO_UPPER') {
+        // Tailored tactical jacket + ballistic chest plate + shoulder yoke + spine pack + held rifle
+        const chest = new THREE.CylinderGeometry(0.205, 0.185, 0.36, 12);
+        chest.scale(1.08, 1.0, 0.68);
+        addPart(anchor, chest, matJacket, 0, 0, 0);
+
+        const plate = new THREE.BoxGeometry(0.32, 0.28, 0.25);
+        addPart(anchor, plate, matArmor, 0, 0.02, -0.005);
+
+        const collar = new THREE.CylinderGeometry(0.12, 0.15, 0.07, 10);
+        addPart(anchor, collar, matArmor, 0, 0.18, 0);
+
+        const crest = new THREE.BoxGeometry(0.18, 0.035, 0.265);
+        addPart(anchor, crest, matTrim, 0, 0.07, -0.01);
+
+        const pack = new THREE.BoxGeometry(0.22, 0.25, 0.09);
+        addPart(anchor, pack, matMask, 0, 0.01, 0.15);
+
+        // Tactical rifle held across chest
+        const rifleBody = new THREE.BoxGeometry(0.05, 0.075, 0.52);
+        addPart(anchor, rifleBody, matGun, 0.06, -0.06, -0.24, 0.08, 0.36, 0);
+        const rifleBarrel = new THREE.CylinderGeometry(0.014, 0.014, 0.34, 8);
+        rifleBarrel.rotateX(Math.PI * 0.5);
+        addPart(anchor, rifleBarrel, matArmor, -0.04, -0.03, -0.50, 0.08, 0.36, 0);
+      } else if (seg.id === 'TORSO_LOWER') {
+        // Waist + utility belt + pouches
+        const waist = new THREE.CylinderGeometry(0.182, 0.195, 0.34, 12);
+        waist.scale(1.05, 1.0, 0.66);
+        addPart(anchor, waist, matJacket, 0, 0, 0);
+
+        const belt = new THREE.CylinderGeometry(0.198, 0.198, 0.065, 12);
+        belt.scale(1.06, 1.0, 0.70);
+        addPart(anchor, belt, matArmor, 0, -0.09, 0);
+
+        const buckle = new THREE.BoxGeometry(0.07, 0.055, 0.03);
+        addPart(anchor, buckle, matTrim, 0, -0.09, -0.135);
+      } else if (seg.id === 'ARM_LEFT' || seg.id === 'ARM_RIGHT') {
+        const isLeft = seg.id === 'ARM_LEFT';
+        const sx = isLeft ? -1 : 1;
+        // Shoulder pauldron
+        const pauldron = new THREE.SphereGeometry(0.082, 10, 8);
+        addPart(anchor, pauldron, matArmor, 0, 0.22, 0.02);
+
+        // Upper arm sleeve angled slightly forward toward weapon
+        const upper = new THREE.CylinderGeometry(0.058, 0.050, 0.28, 9);
+        addPart(anchor, upper, matJacket, 0, 0.09, -0.02, -0.35, 0, sx * 0.08);
+
+        // Forearm + tactical bracer angled inward toward chest weapon
+        const forearm = new THREE.CylinderGeometry(0.048, 0.040, 0.26, 9);
+        addPart(anchor, forearm, matArmor, -sx * 0.06, -0.06, -0.14, -1.05, -sx * 0.35, 0);
+
+        // Gloved hand
+        const hand = new THREE.SphereGeometry(0.042, 8, 8);
+        addPart(anchor, hand, matBoots, -sx * 0.12, -0.11, -0.25);
+      } else if (seg.id === 'LEG_LEFT_UPPER' || seg.id === 'LEG_RIGHT_UPPER') {
+        // Tapered tactical trouser thigh + holster/thigh strap
+        const thigh = new THREE.CylinderGeometry(0.088, 0.072, 0.44, 10);
+        addPart(anchor, thigh, matPants, 0, 0, 0);
+        const strap = new THREE.CylinderGeometry(0.082, 0.082, 0.055, 10);
+        addPart(anchor, strap, matArmor, 0, 0.04, 0);
+        const kneePad = new THREE.BoxGeometry(0.11, 0.11, 0.06);
+        addPart(anchor, kneePad, matArmor, 0, -0.19, -0.055);
+      } else if (seg.id === 'LEGS_LOWER_PAIR') {
+        // Left & Right shin greaves + sculpted tactical boots
+        for (const sx of [-1, 1]) {
+          const lx = sx * 0.115;
+          const shin = new THREE.CylinderGeometry(0.068, 0.055, 0.34, 10);
+          addPart(anchor, shin, matPants, lx, 0.05, 0.0);
+
+          const bootShaft = new THREE.CylinderGeometry(0.062, 0.066, 0.13, 10);
+          addPart(anchor, bootShaft, matBoots, lx, -0.14, 0.0);
+
+          const bootToe = new THREE.BoxGeometry(0.11, 0.08, 0.21);
+          addPart(anchor, bootToe, matBoots, lx, -0.19, -0.045);
+
+          const bootSole = new THREE.BoxGeometry(0.115, 0.025, 0.22);
+          addPart(anchor, bootSole, matArmor, lx, -0.22, -0.045);
+        }
       }
 
-      this.segmentMeshes.push(mesh);
-      this.segmentMaterials.push(mat);
-      group.add(mesh);
+      this.segmentAnchors.push(anchor);
+      group.add(anchor);
     }
 
-    // Grounded contact shadow disc
-    const shadowGeo = new THREE.CircleGeometry(0.45, 16);
+    // Soft grounded contact shadow disc
+    const shadowGeo = new THREE.CircleGeometry(0.46, 20);
     shadowGeo.rotateX(-Math.PI / 2);
     const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
+      color: 0x090c12,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.42,
       depthWrite: false,
     });
     const shadow = new THREE.Mesh(shadowGeo, shadowMat);
@@ -235,7 +410,8 @@ export class HitboxRig {
       if (this.hitFlashTimer <= 0) {
         this.hitFlashTimer = 0;
         for (let i = 0; i < this.segmentMaterials.length; i++) {
-          this.segmentMaterials[i].emissive.setHex(0x000000);
+          // Index 1 is matVisor which retains subtle tactical glow
+          this.segmentMaterials[i].emissive.setHex(i === 1 ? 0xff2e54 : 0x000000);
         }
       }
     }
@@ -262,10 +438,10 @@ export class HitboxRig {
 
       this.segmentMatrices[i].multiplyMatrices(_rootMat, _localMat);
 
-      if (updateVisuals && this.segmentMeshes.length > 0) {
-        const mesh = this.segmentMeshes[i];
-        mesh.position.set(lx, ly, lz);
-        mesh.rotation.set(pose.pitch * seg.pitchWeight, 0, 0, 'YXZ');
+      if (updateVisuals && this.segmentAnchors.length > 0) {
+        const anchor = this.segmentAnchors[i];
+        anchor.position.set(lx, ly, lz);
+        anchor.rotation.set(pose.pitch * seg.pitchWeight, 0, 0, 'YXZ');
       }
     }
 
@@ -407,7 +583,6 @@ function intersectRayAABB(
   let tMin = 0.0;
   let tMax = Infinity;
 
-  // X
   if (Math.abs(dx) < 1e-8) {
     if (ox < -hx || ox > hx) return -1;
   } else {
@@ -424,7 +599,6 @@ function intersectRayAABB(
     if (tMin > tMax) return -1;
   }
 
-  // Y
   if (Math.abs(dy) < 1e-8) {
     if (oy < -hy || oy > hy) return -1;
   } else {
@@ -441,7 +615,6 @@ function intersectRayAABB(
     if (tMin > tMax) return -1;
   }
 
-  // Z
   if (Math.abs(dz) < 1e-8) {
     if (oz < -hz || oz > hz) return -1;
   } else {
