@@ -103,12 +103,12 @@ function appendBoxToBucket(
   const idxAttr = boxGeo.index!;
 
   const faceScales: [number, number][] = [
-    [d / uvTileMeters, h / uvTileMeters], // +X
-    [d / uvTileMeters, h / uvTileMeters], // -X
-    [w / uvTileMeters, d / uvTileMeters], // +Y
-    [w / uvTileMeters, d / uvTileMeters], // -Y
-    [w / uvTileMeters, h / uvTileMeters], // +Z
-    [w / uvTileMeters, h / uvTileMeters], // -Z
+    [d / uvTileMeters, h / uvTileMeters],
+    [d / uvTileMeters, h / uvTileMeters],
+    [w / uvTileMeters, d / uvTileMeters],
+    [w / uvTileMeters, d / uvTileMeters],
+    [w / uvTileMeters, h / uvTileMeters],
+    [w / uvTileMeters, h / uvTileMeters],
   ];
 
   for (let v = 0; v < posAttr.count; v++) {
@@ -131,15 +131,63 @@ function appendBoxToBucket(
   boxGeo.dispose();
 }
 
-function appendBrushToBucket(bucket: GeometryBucket, brush: MapBrush): void {
+/**
+ * Sculpted low-poly Radianite crate with recessed core, perimeter frame rails,
+ * diagonal structural brace, and raised central Kingdom diamond relief.
+ */
+function appendTacticalCrate(
+  bodyBucket: GeometryBucket,
+  frameBucket: GeometryBucket,
+  trimBucket: GeometryBucket,
+  brush: MapBrush
+): void {
   const [w, h, d] = brush.size;
   const [px, py, pz] = brush.pos;
-  const isCrate = brush.mat === 'MAT_COVER_TACTICAL';
-  const tileScale = brush.mat === 'MAT_WALL_ARCHITECTURAL' ? 2.0 : 1.35;
-  appendBoxToBucket(bucket, w, h, d, px, py, pz, 0, brush.rotY, 0, !isCrate, tileScale);
+  const ry = brush.rotY;
+  const cosY = Math.cos(ry);
+  const sinY = Math.sin(ry);
+  const toWorld = (lx: number, ly: number, lz: number): [number, number, number] => [
+    px + lx * cosY + lz * sinY,
+    py + ly,
+    pz - lx * sinY + lz * cosY,
+  ];
+
+  // Recessed inner crate body
+  appendBoxToBucket(bodyBucket, Math.max(0.2, w - 0.08), Math.max(0.2, h - 0.06), Math.max(0.2, d - 0.08), px, py, pz, 0, ry, 0, false);
+
+  // Top & bottom chamfered armor collars
+  const railH = Math.min(0.11, h * 0.14);
+  appendBoxToBucket(frameBucket, w + 0.02, railH, d + 0.02, px, py + h * 0.5 - railH * 0.5, pz, 0, ry, 0, false);
+  appendBoxToBucket(frameBucket, w + 0.02, railH, d + 0.02, px, py - h * 0.5 + railH * 0.5, pz, 0, ry, 0, false);
+
+  // 4 Vertical corner posts
+  const postT = Math.min(0.12, Math.min(w, d) * 0.12);
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const [cx, cy, cz] = toWorld(sx * (w * 0.5 - postT * 0.45), 0, sz * (d * 0.5 - postT * 0.45));
+      appendBoxToBucket(frameBucket, postT, h - railH * 1.4, postT, cx, cy, cz, 0, ry, 0, false);
+    }
+  }
+
+  // Front/Back & Side raised diamond reliefs + horizontal rib
+  if (h >= 0.85) {
+    for (const sz of [-1, 1]) {
+      const [dx, dy, dz] = toWorld(0, 0, sz * (d * 0.5 - 0.01));
+      appendBoxToBucket(trimBucket, Math.min(0.32, w * 0.25), Math.min(0.32, h * 0.25), 0.04, dx, dy, dz, 0, ry, Math.PI * 0.25, false);
+    }
+    for (const sx of [-1, 1]) {
+      const [dx, dy, dz] = toWorld(sx * (w * 0.5 - 0.01), 0, 0);
+      appendBoxToBucket(trimBucket, 0.04, Math.min(0.32, h * 0.25), Math.min(0.32, d * 0.25), dx, dy, dz, Math.PI * 0.25, ry, 0, false);
+    }
+  }
 }
 
-function appendArchMolding(
+/**
+ * Builds true arched spandrel corners inside a rectangular doorway opening
+ * plus matching pilasters, arch ring, and keystone so portals form real curves.
+ */
+function appendArchPortal(
+  wallBucket: GeometryBucket,
   stoneBucket: GeometryBucket,
   cx: number,
   baseY: number,
@@ -150,8 +198,10 @@ function appendArchMolding(
   rotY = 0
 ): void {
   const halfSpan = spanWidth * 0.5;
-  const pillarW = 0.36;
-  const pillarD = depth + 0.24;
+  const springY = openingHeight - Math.min(0.75, halfSpan * 0.26);
+  const archRise = openingHeight - springY;
+  const pillarW = 0.34;
+  const pillarD = depth + 0.18;
 
   const cosY = Math.cos(rotY);
   const sinY = Math.sin(rotY);
@@ -161,59 +211,64 @@ function appendArchMolding(
     cz - lx * sinY + lz * cosY,
   ];
 
-  // Left & Right Stone Pilasters + Capitals
-  for (const side of [-1, 1]) {
-    const px = side * (halfSpan + pillarW * 0.4);
-    const [wx, wy, wz] = toWorld(px, openingHeight * 0.5, 0);
-    appendBoxToBucket(stoneBucket, pillarW, openingHeight, pillarD, wx, wy, wz, 0, rotY, 0, true, 1.5);
+  // Extruded spandrel corners filling the rectangular top corners down to the arch curve
+  const spandrelShape = new THREE.Shape();
+  spandrelShape.moveTo(-halfSpan, springY);
+  spandrelShape.lineTo(-halfSpan, openingHeight + 0.02);
+  spandrelShape.lineTo(halfSpan, openingHeight + 0.02);
+  spandrelShape.lineTo(halfSpan, springY);
+  const steps = 16;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const ang = t * Math.PI;
+    const x = Math.cos(ang) * halfSpan;
+    const y = springY + Math.sin(ang) * archRise;
+    spandrelShape.lineTo(x, y);
+  }
+  spandrelShape.closePath();
 
-    const [kx, ky, kz] = toWorld(px, openingHeight + 0.12, 0);
-    appendBoxToBucket(
-      stoneBucket,
-      pillarW + 0.16,
-      0.24,
-      pillarD + 0.14,
-      kx,
-      ky,
-      kz,
-      0,
-      rotY,
-      0,
-      true,
-      1.5
-    );
+  const spandrelGeo = new THREE.ExtrudeGeometry(spandrelShape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 16,
+  });
+  spandrelGeo.translate(0, 0, -depth * 0.5);
+  appendGeometryToBucket(wallBucket, spandrelGeo, cx, baseY, cz, 0, rotY, 0, 0.5, 0.5);
+
+  // Left & Right Stone Pilasters + Capitals ending cleanly at springY
+  for (const side of [-1, 1]) {
+    const px = side * (halfSpan + pillarW * 0.35);
+    const [wx, wy, wz] = toWorld(px, springY * 0.5, 0);
+    appendBoxToBucket(stoneBucket, pillarW, springY, pillarD, wx, wy, wz, 0, rotY, 0, false);
+
+    const [kx, ky, kz] = toWorld(px, springY + 0.08, 0);
+    appendBoxToBucket(stoneBucket, pillarW + 0.14, 0.16, pillarD + 0.10, kx, ky, kz, 0, rotY, 0, false);
   }
 
-  // Horizontal stone architrave beam tying pilasters together
-  const [lx, ly, lz] = toWorld(0, openingHeight + 0.12, 0);
-  appendBoxToBucket(stoneBucket, spanWidth + 0.65, 0.24, pillarD + 0.06, lx, ly, lz, 0, rotY, 0, true, 1.4);
-
-  // Smooth elliptical stone arch ring anchored onto pilaster capitals
-  const segments = 17;
-  const rx = halfSpan + 0.14;
-  const ry = halfSpan * 0.24;
+  // Smooth sculpted arch trim ring hugging the exact arch curve + central keystone
+  const segments = 16;
+  const rx = halfSpan + 0.10;
+  const ry = archRise + 0.10;
   for (let i = 0; i < segments; i++) {
     const t = (i + 0.5) / segments;
     const ang = t * Math.PI;
     const vx = Math.cos(ang) * rx;
-    const vy = openingHeight + 0.18 + Math.sin(ang) * ry;
-    const isKeystone = i === Math.floor(segments / 2);
+    const vy = springY + Math.sin(ang) * ry;
+    const isKeystone = i === Math.floor(segments / 2) || i === Math.floor(segments / 2) - 1;
     const [wx, wy, wz] = toWorld(vx, vy, 0);
-    // Tangent slope of ellipse (vx = rx*cos, vy = ry*sin)
     const tangentAngle = Math.atan2(ry * Math.cos(ang), -rx * Math.sin(ang));
     appendBoxToBucket(
       stoneBucket,
-      (spanWidth / segments) * (isKeystone ? 1.55 : 1.45),
-      isKeystone ? 0.36 : 0.26,
-      pillarD + (isKeystone ? 0.14 : 0.08),
+      (spanWidth / segments) * 1.38,
+      isKeystone ? 0.28 : 0.22,
+      pillarD + (isKeystone ? 0.10 : 0.04),
       wx,
       wy,
       wz,
       0,
       rotY,
       tangentAngle,
-      true,
-      1.2
+      false
     );
   }
 }
@@ -255,90 +310,60 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
   // 1. Core playable & vista brushes
   for (let i = 0; i < ASCENT_MID_BRUSHES.length; i++) {
     const brush = ASCENT_MID_BRUSHES[i];
-    appendBrushToBucket(buckets[brush.mat], brush);
+    if (brush.mat === 'MAT_COVER_TACTICAL') {
+      appendTacticalCrate(
+        buckets.MAT_COVER_TACTICAL,
+        buckets.MAT_CATWALK_METAL,
+        stoneBucket,
+        brush
+      );
+      continue;
+    }
 
-    // Add stone base plinth & top cornice along primary architectural walls
-    if (brush.mat === 'MAT_WALL_ARCHITECTURAL' && brush.collidable && brush.size[1] >= 4.0) {
-      const [w, h, d] = brush.size;
-      const [px, py, pz] = brush.pos;
+    const [w, h, d] = brush.size;
+    const [px, py, pz] = brush.pos;
+    appendBoxToBucket(buckets[brush.mat], w, h, d, px, py, pz, 0, brush.rotY, 0, true, 2.0);
+
+    // Chamfered stone base plinth & top cornice along primary walls
+    if (brush.mat === 'MAT_WALL_ARCHITECTURAL' && brush.collidable && h >= 4.0) {
       const topY = py + h * 0.5;
       const botY = py - h * 0.5;
       if (w >= 3.0 || d >= 3.0) {
-        appendBoxToBucket(stoneBucket, w + 0.2, 0.28, d + 0.2, px, topY + 0.08, pz, 0, brush.rotY, 0, true, 1.5);
-        appendBoxToBucket(stoneBucket, w + 0.14, 0.32, d + 0.14, px, botY + 0.16, pz, 0, brush.rotY, 0, true, 1.5);
+        appendBoxToBucket(stoneBucket, w + 0.18, 0.24, d + 0.18, px, topY + 0.08, pz, 0, brush.rotY, 0, false);
+        appendBoxToBucket(stoneBucket, w + 0.12, 0.28, d + 0.12, px, botY + 0.14, pz, 0, brush.rotY, 0, false);
       }
-    }
-
-    // Add chamfered steel corner trim caps on tactical Radianite crates
-    if (brush.mat === 'MAT_COVER_TACTICAL') {
-      const [w, h, d] = brush.size;
-      const [px, py, pz] = brush.pos;
-      appendBoxToBucket(
-        buckets.MAT_CATWALK_METAL,
-        w + 0.05,
-        0.09,
-        d + 0.05,
-        px,
-        py + h * 0.5 - 0.03,
-        pz,
-        0,
-        brush.rotY,
-        0,
-        true,
-        1.0
-      );
-      appendBoxToBucket(
-        buckets.MAT_CATWALK_METAL,
-        w + 0.05,
-        0.09,
-        d + 0.05,
-        px,
-        py - h * 0.5 + 0.03,
-        pz,
-        0,
-        brush.rotY,
-        0,
-        true,
-        1.0
-      );
     }
   }
 
-  // 2. Surrounding Venetian Courtyard Ground Apron (prevents floating void past walls)
+  // 2. Surrounding Ground Apron
   appendBoxToBucket(buckets.MAT_FLOOR_COURTYARD, 160, 0.4, 160, 0, -0.75, 0, 0, 0, 0, true, 2.2);
 
-  // 3. Sculpted Archway Trim (Top Mid Arch, Bottom Mid Arch, Market Entrance)
-  appendArchMolding(stoneBucket, 0, 1.35, -24.0, 6.0, 2.55, 1.2, 0);
-  appendArchMolding(stoneBucket, 0, 0.0, 27.0, 5.0, 3.4, 1.2, 0);
-  appendArchMolding(stoneBucket, 10.5, 0.3, 6.0, 3.4, 3.5, 1.0, Math.PI * 0.5);
+  // 3. True Curved Arch Portals (Top Mid Arch, Bottom Mid Arch, Market Entrance)
+  appendArchPortal(buckets.MAT_WALL_ARCHITECTURAL, stoneBucket, 0, 1.35, -24.0, 6.0, 2.55, 1.2, 0);
+  appendArchPortal(buckets.MAT_WALL_ARCHITECTURAL, stoneBucket, 0, 0.0, 27.0, 5.0, 3.4, 1.2, 0);
+  appendArchPortal(buckets.MAT_WALL_ARCHITECTURAL, stoneBucket, 10.5, 0.3, 6.0, 3.4, 3.5, 1.0, Math.PI * 0.5);
 
-  // 4. Pitched Terracotta Roof Eaves & Overhangs along Courtyard Walls
-  // East wall eaves
-  appendBoxToBucket(roofBucket, 2.2, 0.38, 15.0, 10.7, 6.22, -2.5, 0, 0, -0.32, true, 1.8);
-  // Market roof
-  appendBoxToBucket(roofBucket, 11.8, 0.55, 13.4, 16.5, 6.28, 6.0, 0.22, 0, 0, true, 2.0);
-  // West Catwalk eaves
-  appendBoxToBucket(roofBucket, 2.2, 0.38, 29.0, -11.5, 6.72, -6.5, 0, 0, 0.32, true, 1.8);
-  // Top Mid Arch roof cap
-  appendBoxToBucket(roofBucket, 16.4, 0.5, 2.3, 0, 6.68, -24.0, 0.26, 0, 0, true, 1.8);
-  // Bottom Mid Arch roof cap
-  appendBoxToBucket(roofBucket, 14.5, 0.5, 2.3, 0, 6.22, 27.0, -0.26, 0, 0, true, 1.8);
-  // Mid Link south wall eaves
-  appendBoxToBucket(roofBucket, 6.6, 0.45, 4.4, 7.5, 6.22, 13.0, -0.26, 0, 0, true, 1.8);
+  // 4. Pitched Roof Eaves & Overhangs
+  appendBoxToBucket(roofBucket, 2.2, 0.34, 15.0, 10.7, 6.22, -2.5, 0, 0, -0.32, false);
+  appendBoxToBucket(roofBucket, 11.8, 0.48, 13.4, 16.5, 6.28, 6.0, 0.22, 0, 0, false);
+  appendBoxToBucket(roofBucket, 2.2, 0.34, 29.0, -11.5, 6.72, -6.5, 0, 0, 0.32, false);
+  appendBoxToBucket(roofBucket, 16.4, 0.46, 2.3, 0, 6.68, -24.0, 0.26, 0, 0, false);
+  appendBoxToBucket(roofBucket, 14.5, 0.46, 2.3, 0, 6.22, 27.0, -0.26, 0, 0, false);
+  appendBoxToBucket(roofBucket, 6.6, 0.42, 4.4, 7.5, 6.22, 13.0, -0.26, 0, 0, false);
 
-  // 5. Timber Pergola Beams & Wall Shutters (Venetian warmth)
+  // 5. Timber Pergola Beams & Recessed Window Frames
   for (let z = -10; z <= 2; z += 3.0) {
-    appendBoxToBucket(woodBucket, 2.8, 0.16, 0.18, 9.2, 5.15, z, 0, 0, 0);
+    appendBoxToBucket(woodBucket, 2.8, 0.16, 0.18, 9.2, 5.15, z);
   }
   appendBoxToBucket(woodBucket, 0.2, 0.2, 13.0, 8.0, 5.05, -4.0);
 
-  // Shuttered upper windows on East & West Courtyard walls
   const windowZList = [-6.5, -0.5, 16.5];
   for (const wz of windowZList) {
     appendBoxToBucket(woodBucket, 0.14, 1.5, 1.0, 9.95, 4.3, wz);
     appendBoxToBucket(woodBucket, 0.16, 1.5, 0.28, 9.93, 4.3, wz - 0.65);
     appendBoxToBucket(woodBucket, 0.16, 1.5, 0.28, 9.93, 4.3, wz + 0.65);
     appendBoxToBucket(stoneBucket, 0.26, 0.16, 1.55, 9.92, 3.48, wz);
+    appendBoxToBucket(stoneBucket, 0.26, 0.16, 1.55, 9.92, 5.12, wz);
   }
 
   // 6. Catwalk Iron Handrail Stanchions & Top Rail
@@ -347,7 +372,7 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
   }
   appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.09, 0.07, 13.6, -7.55, 2.60, -1.0);
 
-  // 7. Mediterranean Planter Boxes & Cypress / Olive Foliage (out of collision lanes)
+  // 7. Planter Boxes & Stylized Low-Poly Cypress Foliage
   const treePositions: [number, number, number, number][] = [
     [-10.2, 1.35, -19.5, 3.2],
     [9.3, 0.0, -10.5, 2.8],
@@ -356,19 +381,17 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
     [13.5, 0.3, 1.6, 2.4],
   ];
   for (const [tx, ty, tz, height] of treePositions) {
-    // Stone planter pot
     appendBoxToBucket(stoneBucket, 0.9, 0.55, 0.9, tx, ty + 0.275, tz);
-    // Trunk
-    const trunk = new THREE.CylinderGeometry(0.11, 0.15, height * 0.45, 7);
+    appendBoxToBucket(stoneBucket, 1.02, 0.12, 1.02, tx, ty + 0.56, tz);
+    const trunk = new THREE.CylinderGeometry(0.10, 0.14, height * 0.45, 6);
     appendGeometryToBucket(woodBucket, trunk, tx, ty + 0.55 + height * 0.22, tz);
-    // Layered stylized Mediterranean cypress canopy
-    const c1 = new THREE.ConeGeometry(0.68, height * 0.55, 8);
-    appendGeometryToBucket(foliageBucket, c1, tx, ty + 0.8 + height * 0.45, tz);
-    const c2 = new THREE.ConeGeometry(0.52, height * 0.45, 8);
-    appendGeometryToBucket(foliageBucket, c2, tx, ty + 0.8 + height * 0.68, tz);
+    const c1 = new THREE.ConeGeometry(0.66, height * 0.52, 7);
+    appendGeometryToBucket(foliageBucket, c1, tx, ty + 0.82 + height * 0.45, tz);
+    const c2 = new THREE.ConeGeometry(0.48, height * 0.44, 7);
+    appendGeometryToBucket(foliageBucket, c2, tx, ty + 0.85 + height * 0.68, tz);
   }
 
-  // 8. Warm Wall-Mounted Venetian Lanterns
+  // 8. Wall Lantern Sconces
   const lanternPositions: [number, number, number][] = [
     [9.85, 3.3, -4.0],
     [9.85, 3.3, 2.8],
@@ -384,44 +407,40 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
     appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.2, 0.06, 0.2, lx, ly - 0.16, lz);
   }
 
-  // 9. Venetian Belltower Spire, Clock & Vista Rooftops
-  // Belltower belfry + pyramid terracotta roof on vista_belltower_west (-26, 20, -8)
-  appendBoxToBucket(stoneBucket, 7.6, 0.6, 7.6, -26.0, 20.3, -8.0, 0, 0.15, 0, true, 2.0);
-  appendBoxToBucket(buckets.MAT_WALL_ARCHITECTURAL, 5.4, 4.2, 5.4, -26.0, 22.6, -8.0, 0, 0.15, 0, true, 2.0);
+  // 9. Venetian Belltower Spire & Vista Rooftops
+  appendBoxToBucket(stoneBucket, 7.6, 0.6, 7.6, -26.0, 20.3, -8.0, 0, 0.15, 0, false);
+  appendBoxToBucket(buckets.MAT_WALL_ARCHITECTURAL, 5.4, 4.2, 5.4, -26.0, 22.6, -8.0, 0, 0.15, 0, false);
   const bellSpire = new THREE.ConeGeometry(4.4, 5.2, 4);
-  appendGeometryToBucket(roofBucket, bellSpire, -26.0, 27.3, -8.0, 0, 0.15 + Math.PI * 0.25, 0, 2, 2);
+  appendGeometryToBucket(roofBucket, bellSpire, -26.0, 27.3, -8.0, 0, 0.15 + Math.PI * 0.25, 0);
 
-  // Pitched terracotta roofs on distant vista buildings
   const vistaRoof = new THREE.ConeGeometry(16.0, 6.0, 4);
-  appendGeometryToBucket(roofBucket, vistaRoof, 4.0, 21.0, -52.0, 0, Math.PI * 0.25, 0, 4, 2);
+  appendGeometryToBucket(roofBucket, vistaRoof, 4.0, 21.0, -52.0, 0, Math.PI * 0.25, 0);
   const vistaRoofSouth = new THREE.ConeGeometry(15.0, 5.5, 4);
-  appendGeometryToBucket(roofBucket, vistaRoofSouth, -6.0, 18.7, 50.0, 0, Math.PI * 0.25, 0, 4, 2);
+  appendGeometryToBucket(roofBucket, vistaRoofSouth, -6.0, 18.7, 50.0, 0, Math.PI * 0.25, 0);
   const eastRoof = new THREE.ConeGeometry(8.0, 4.5, 4);
-  appendGeometryToBucket(roofBucket, eastRoof, 34.0, 17.2, 4.0, 0, -0.1 + Math.PI * 0.25, 0, 3, 2);
+  appendGeometryToBucket(roofBucket, eastRoof, 34.0, 17.2, 4.0, 0, -0.1 + Math.PI * 0.25, 0);
 
   const geometriesToDispose: THREE.BufferGeometry[] = [];
 
-  const addStaticMesh = (bucket: GeometryBucket, mat: THREE.Material, castShadow = true) => {
+  const addStaticMesh = (bucket: GeometryBucket, mat: THREE.Material) => {
     if (bucket.positions.length === 0) return;
     const geo = finalizeBucketGeometry(bucket);
     geometriesToDispose.push(geo);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = castShadow;
-    mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     group.add(mesh);
   };
 
-  addStaticMesh(buckets.MAT_FLOOR_COURTYARD, materials.MAT_FLOOR_COURTYARD, false);
-  addStaticMesh(buckets.MAT_WALL_ARCHITECTURAL, materials.MAT_WALL_ARCHITECTURAL, true);
-  addStaticMesh(buckets.MAT_COVER_TACTICAL, materials.MAT_COVER_TACTICAL, true);
-  addStaticMesh(buckets.MAT_CATWALK_METAL, materials.MAT_CATWALK_METAL, true);
-  addStaticMesh(roofBucket, materials.MAT_TERRACOTTA_ROOF, true);
-  addStaticMesh(woodBucket, materials.MAT_WOOD_TRIM, true);
-  addStaticMesh(stoneBucket, materials.MAT_STONE_TRIM, true);
-  addStaticMesh(foliageBucket, materials.MAT_FOLIAGE, true);
-  addStaticMesh(lanternBucket, materials.MAT_LANTERN_GLOW, false);
+  addStaticMesh(buckets.MAT_FLOOR_COURTYARD, materials.MAT_FLOOR_COURTYARD);
+  addStaticMesh(buckets.MAT_WALL_ARCHITECTURAL, materials.MAT_WALL_ARCHITECTURAL);
+  addStaticMesh(buckets.MAT_COVER_TACTICAL, materials.MAT_COVER_TACTICAL);
+  addStaticMesh(buckets.MAT_CATWALK_METAL, materials.MAT_CATWALK_METAL);
+  addStaticMesh(roofBucket, materials.MAT_TERRACOTTA_ROOF);
+  addStaticMesh(woodBucket, materials.MAT_WOOD_TRIM);
+  addStaticMesh(stoneBucket, materials.MAT_STONE_TRIM);
+  addStaticMesh(foliageBucket, materials.MAT_FOLIAGE);
+  addStaticMesh(lanternBucket, materials.MAT_LANTERN_GLOW);
 
   // Buy Phase Energy Barriers
   const barriersGroup = new THREE.Group();

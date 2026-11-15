@@ -11,65 +11,28 @@ export class ViewModelRig {
   private swingAngle = 0;
   private walkPhase = 0;
 
-  private readonly matPolymer = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x1f252e).convertSRGBToLinear(),
-    roughness: 0.82,
-    metalness: 0.1,
-    envMapIntensity: 0.35,
+  // Clean Blender Clay / Low-Poly Matte Weapon Palette (MeshLambertMaterial for locked 60+ FPS)
+  private readonly matClayDark = new THREE.MeshLambertMaterial({
+    color: new THREE.Color(0x3a3f48).convertSRGBToLinear(),
   });
-  private readonly matGunmetal = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x3a4352).convertSRGBToLinear(),
-    roughness: 0.32,
-    metalness: 0.82,
-    envMapIntensity: 0.85,
+  private readonly matClayMid = new THREE.MeshLambertMaterial({
+    color: new THREE.Color(0x6c7380).convertSRGBToLinear(),
   });
-  private readonly matSteelDark = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x232933).convertSRGBToLinear(),
-    roughness: 0.36,
-    metalness: 0.78,
-    envMapIntensity: 0.75,
+  private readonly matClayLight = new THREE.MeshLambertMaterial({
+    color: new THREE.Color(0xc5c9d2).convertSRGBToLinear(),
   });
-  private readonly matAccentGold = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0xd49d45).convertSRGBToLinear(),
-    roughness: 0.26,
-    metalness: 0.88,
+  private readonly matGrip = new THREE.MeshLambertMaterial({
+    color: new THREE.Color(0x252930).convertSRGBToLinear(),
   });
-  private readonly matAccentTeal = new THREE.MeshStandardMaterial({
+  private readonly matGlove = new THREE.MeshLambertMaterial({
+    color: new THREE.Color(0xd8dae0).convertSRGBToLinear(),
+  });
+  private readonly matAccentTeal = new THREE.MeshBasicMaterial({
     color: new THREE.Color(0x00e6c7).convertSRGBToLinear(),
-    emissive: new THREE.Color(0x009982).convertSRGBToLinear(),
-    emissiveIntensity: 0.55,
-    roughness: 0.22,
-    metalness: 0.5,
   });
-  private readonly matGrip = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x12151a).convertSRGBToLinear(),
-    roughness: 0.92,
-    metalness: 0.04,
-    envMapIntensity: 0.25,
-  });
-  private readonly matBlade = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0xcbd7e4).convertSRGBToLinear(),
-    roughness: 0.16,
-    metalness: 0.94,
-  });
-  private readonly matLens = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x38bdf8).convertSRGBToLinear(),
-    emissive: new THREE.Color(0x0ea5e9).convertSRGBToLinear(),
-    emissiveIntensity: 0.4,
-    roughness: 0.08,
-    metalness: 0.35,
-  });
-  private readonly matGlove = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x202630).convertSRGBToLinear(),
-    roughness: 0.88,
-    metalness: 0.06,
-    envMapIntensity: 0.25,
-  });
-  private readonly matSleeve = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0x1b3740).convertSRGBToLinear(),
-    roughness: 0.9,
-    metalness: 0.04,
-    envMapIntensity: 0.25,
+  private readonly matLens = new THREE.MeshLambertMaterial({
+    color: new THREE.Color(0x88b4c8).convertSRGBToLinear(),
+    emissive: new THREE.Color(0x1f4b5c).convertSRGBToLinear(),
   });
 
   constructor() {
@@ -107,206 +70,389 @@ export class ViewModelRig {
     return m;
   }
 
-  private addHandGrip(g: THREE.Group, gx: number, gy: number, gz: number, twoHanded: boolean, supportZ = -0.22): void {
-    // Primary trigger hand + thumb wrap + armored knuckle plate + forearm sleeve
-    g.add(this.part(new THREE.BoxGeometry(0.048, 0.052, 0.064), this.matGlove, gx, gy, gz, 0.18, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.020, 0.022, 0.042), this.matGlove, gx - 0.020, gy + 0.020, gz - 0.012, 0.28, 0.25, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.044, 0.012, 0.032), this.matAccentGold, gx, gy + 0.023, gz - 0.016, 0.18, 0, 0));
-    const armR = new THREE.CylinderGeometry(0.028, 0.036, 0.22, 10);
-    armR.rotateX(Math.PI * 0.5);
-    g.add(this.part(armR, this.matSleeve, gx + 0.036, gy - 0.038, gz + 0.13, 0.18, -0.16, 0));
+  /**
+   * Extrudes a 2D (z, y) side-profile silhouette centered along X so weapons have
+   * authentic chamfered Blender-like angles instead of plain boxes.
+   * Shape coordinates: +x = forward (-Z in weapon space), +y = up (+Y).
+   */
+  private extrudeSideProfile(
+    pts: [number, number][],
+    thickness: number,
+    bevel = 0.003
+  ): THREE.BufferGeometry {
+    const shape = new THREE.Shape();
+    shape.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+      shape.lineTo(pts[i][0], pts[i][1]);
+    }
+    shape.closePath();
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: thickness,
+      bevelEnabled: bevel > 0,
+      bevelThickness: bevel,
+      bevelSize: bevel,
+      bevelSegments: 1,
+    });
+    // Center thickness along Z then rotate Y=+90deg so shape +X maps to -Z (forward)
+    geo.translate(0, 0, -thickness * 0.5);
+    geo.rotateY(Math.PI * 0.5);
+    return geo;
+  }
+
+  private addHands(
+    g: THREE.Group,
+    gx: number,
+    gy: number,
+    gz: number,
+    twoHanded: boolean,
+    supportZ = -0.24
+  ): void {
+    // Primary trigger hand wrapping grip cleanly (zero floating pipes)
+    g.add(this.part(new THREE.BoxGeometry(0.042, 0.048, 0.056), this.matGlove, gx, gy, gz, 0.2, 0, 0));
+    g.add(this.part(new THREE.BoxGeometry(0.018, 0.020, 0.036), this.matGlove, gx - 0.018, gy + 0.018, gz - 0.012, 0.28, 0.25, 0));
+    g.add(this.part(new THREE.BoxGeometry(0.044, 0.012, 0.030), this.matClayDark, gx, gy + 0.021, gz - 0.012, 0.2, 0, 0));
+    // Wrist cuff connecting smoothly toward off-screen right shoulder
+    const wristR = new THREE.CylinderGeometry(0.024, 0.030, 0.16, 8);
+    wristR.rotateX(Math.PI * 0.5);
+    g.add(this.part(wristR, this.matClayDark, gx + 0.024, gy - 0.032, gz + 0.095, 0.26, -0.18, 0));
 
     if (twoHanded) {
-      // Support hand cradling handguard + armored knuckle + tucked left forearm sleeve
-      g.add(this.part(new THREE.BoxGeometry(0.050, 0.044, 0.066), this.matGlove, -0.010, gy + 0.012, supportZ, 0, 0.12, 0));
-      g.add(this.part(new THREE.BoxGeometry(0.042, 0.012, 0.032), this.matGunmetal, -0.014, gy + 0.032, supportZ - 0.008, 0, 0.12, 0));
-      const armL = new THREE.CylinderGeometry(0.026, 0.034, 0.26, 10);
-      armL.rotateX(Math.PI * 0.5);
-      g.add(this.part(armL, this.matSleeve, -0.088, gy - 0.048, supportZ + 0.135, 0.24, 0.42, 0));
+      // Support hand cradling handguard + compact wrist cuff (no protruding pipe)
+      g.add(this.part(new THREE.BoxGeometry(0.046, 0.040, 0.062), this.matGlove, -0.008, gy + 0.014, supportZ, 0, 0.1, 0));
+      g.add(this.part(new THREE.BoxGeometry(0.040, 0.012, 0.030), this.matClayDark, -0.012, gy + 0.032, supportZ - 0.006, 0, 0.1, 0));
+      const cuffL = new THREE.CylinderGeometry(0.022, 0.025, 0.055, 8);
+      cuffL.rotateX(Math.PI * 0.5);
+      g.add(this.part(cuffL, this.matClayDark, -0.024, gy - 0.008, supportZ + 0.042, 0.52, 0.35, 0));
     }
   }
 
   private buildKnife(): THREE.Group {
     const g = new THREE.Group();
-    const handle = new THREE.CylinderGeometry(0.015, 0.018, 0.12, 10);
-    handle.rotateX(Math.PI * 0.5);
+    const handle = this.extrudeSideProfile(
+      [
+        [-0.06, -0.014],
+        [0.05, -0.012],
+        [0.06, 0.014],
+        [-0.05, 0.016],
+      ],
+      0.018,
+      0.003
+    );
     g.add(this.part(handle, this.matGrip, 0, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.038, 0.048, 0.014), this.matAccentGold, 0, 0.004, -0.064));
-
-    // Tapered beveled blade profile
-    const bladeShape = new THREE.Shape();
-    bladeShape.moveTo(0, 0);
-    bladeShape.lineTo(0.18, 0.01);
-    bladeShape.lineTo(0.21, 0.024);
-    bladeShape.lineTo(0.0, 0.034);
-    bladeShape.closePath();
-    const bladeGeo = new THREE.ExtrudeGeometry(bladeShape, {
-      depth: 0.005,
-      bevelEnabled: true,
-      bevelThickness: 0.002,
-      bevelSize: 0.002,
-      bevelSegments: 1,
-    });
-    bladeGeo.rotateY(Math.PI * 0.5);
-    g.add(this.part(bladeGeo, this.matBlade, -0.0025, -0.006, -0.068));
-
-    // Glowing radianite edge strip
-    g.add(this.part(new THREE.BoxGeometry(0.003, 0.006, 0.155), this.matAccentTeal, 0, -0.002, -0.15));
-    this.addHandGrip(g, 0.005, -0.005, 0.01, false);
-    g.rotation.set(0.16, 0.28, -0.22);
+    // Pommel ring
+    const ring = new THREE.TorusGeometry(0.014, 0.004, 6, 12);
+    ring.rotateY(Math.PI * 0.5);
+    g.add(this.part(ring, this.matClayLight, 0, -0.002, 0.072));
+    // Guard
+    g.add(this.part(new THREE.BoxGeometry(0.028, 0.044, 0.014), this.matClayDark, 0, 0.004, -0.06));
+    // Curved swept tactical blade
+    const blade = this.extrudeSideProfile(
+      [
+        [0.06, -0.010],
+        [0.21, -0.002],
+        [0.255, 0.018],
+        [0.18, 0.024],
+        [0.06, 0.020],
+      ],
+      0.005,
+      0.002
+    );
+    g.add(this.part(blade, this.matClayLight, 0, 0, 0));
+    g.add(this.part(new THREE.BoxGeometry(0.003, 0.005, 0.14), this.matAccentTeal, 0, 0.003, -0.145));
+    this.addHands(g, 0.004, -0.004, 0.005, false);
+    g.rotation.set(0.16, 0.24, -0.22);
     return g;
   }
 
   private buildPistol(suppressed: boolean, revolver: boolean): THREE.Group {
     const g = new THREE.Group();
 
-    // Angled ergonomic pistol grip
-    g.add(this.part(new THREE.BoxGeometry(0.031, 0.102, 0.042), this.matGrip, 0, -0.042, 0.018, 0.22, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.034, 0.014, 0.048), this.matAccentGold, 0, -0.09, 0.028, 0.22, 0, 0));
+    // Sculpted angled ergonomic grip
+    const grip = this.extrudeSideProfile(
+      [
+        [-0.042, -0.088],
+        [0.004, -0.090],
+        [0.024, -0.005],
+        [-0.020, 0.005],
+      ],
+      0.026,
+      0.003
+    );
+    g.add(this.part(grip, this.matGrip, 0, 0, 0));
 
-    // Trigger guard & trigger
-    g.add(this.part(new THREE.BoxGeometry(0.010, 0.006, 0.045), this.matSteelDark, 0, -0.025, -0.032));
-    g.add(this.part(new THREE.BoxGeometry(0.010, 0.026, 0.006), this.matSteelDark, 0, -0.012, -0.052));
-    g.add(this.part(new THREE.BoxGeometry(0.005, 0.016, 0.006), this.matAccentGold, 0, -0.008, -0.026, -0.25, 0, 0));
+    // Trigger guard & curved trigger
+    g.add(this.part(new THREE.BoxGeometry(0.009, 0.005, 0.042), this.matClayDark, 0, -0.026, -0.036));
+    g.add(this.part(new THREE.BoxGeometry(0.009, 0.024, 0.006), this.matClayDark, 0, -0.014, -0.056));
+    g.add(this.part(new THREE.BoxGeometry(0.004, 0.014, 0.005), this.matClayLight, 0, -0.009, -0.030, -0.25, 0, 0));
 
-    // Lower polymer frame + Picatinny under-rail
-    g.add(this.part(new THREE.BoxGeometry(0.030, 0.020, 0.175), this.matPolymer, 0, 0.002, -0.065));
+    // Lower receiver frame
+    const frame = this.extrudeSideProfile(
+      [
+        [-0.025, -0.004],
+        [0.155, -0.004],
+        [0.162, 0.014],
+        [-0.032, 0.014],
+      ],
+      0.026,
+      0.002
+    );
+    g.add(this.part(frame, this.matClayDark, 0, 0, 0));
 
     if (revolver) {
-      // Sheriff: fluted cylinder + heavy vented barrel shroud
-      const drum = new THREE.CylinderGeometry(0.025, 0.025, 0.058, 12);
+      const drum = new THREE.CylinderGeometry(0.024, 0.024, 0.054, 8);
       drum.rotateX(Math.PI * 0.5);
-      g.add(this.part(drum, this.matAccentGold, 0, 0.024, -0.045));
-      g.add(this.part(new THREE.BoxGeometry(0.024, 0.034, 0.155), this.matGunmetal, 0, 0.026, -0.155));
-      const barrel = new THREE.CylinderGeometry(0.010, 0.010, 0.17, 10);
+      g.add(this.part(drum, this.matClayLight, 0, 0.026, -0.045));
+      const shroud = this.extrudeSideProfile(
+        [
+          [0.075, 0.012],
+          [0.245, 0.014],
+          [0.235, 0.042],
+          [0.075, 0.042],
+        ],
+        0.022,
+        0.002
+      );
+      g.add(this.part(shroud, this.matClayMid, 0, 0, 0));
+      const barrel = new THREE.CylinderGeometry(0.009, 0.009, 0.17, 8);
       barrel.rotateX(Math.PI * 0.5);
-      g.add(this.part(barrel, this.matSteelDark, 0, 0.030, -0.155));
+      g.add(this.part(barrel, this.matClayDark, 0, 0.032, -0.165));
     } else {
-      // Classic / Ghost: beveled upper slide with ejection port & serrations
-      const slide = new THREE.BoxGeometry(0.033, 0.032, 0.195);
-      g.add(this.part(slide, suppressed ? this.matSteelDark : this.matGunmetal, 0, 0.025, -0.062));
-      g.add(this.part(new THREE.BoxGeometry(0.035, 0.012, 0.038), this.matGrip, 0.002, 0.032, -0.068));
-
-      // Slide serrations
+      // Chamfered slide profile
+      const slide = this.extrudeSideProfile(
+        [
+          [-0.035, 0.013],
+          [0.162, 0.013],
+          [0.158, 0.040],
+          [-0.026, 0.040],
+        ],
+        0.028,
+        0.003
+      );
+      g.add(this.part(slide, suppressed ? this.matClayDark : this.matClayMid, 0, 0, 0));
       for (let i = 0; i < 4; i++) {
-        g.add(this.part(new THREE.BoxGeometry(0.036, 0.022, 0.004), this.matPolymer, 0, 0.025, 0.005 + i * 0.008));
+        g.add(this.part(new THREE.BoxGeometry(0.036, 0.020, 0.004), this.matGrip, 0, 0.026, 0.004 + i * 0.008));
       }
-
-      // Cylindrical inner barrel tip
-      const barrel = new THREE.CylinderGeometry(0.008, 0.008, 0.03, 10);
+      const barrel = new THREE.CylinderGeometry(0.008, 0.008, 0.03, 8);
       barrel.rotateX(Math.PI * 0.5);
-      g.add(this.part(barrel, this.matSteelDark, 0, 0.024, -0.168));
+      g.add(this.part(barrel, this.matClayDark, 0, 0.025, -0.172));
     }
 
-    // Rear & front tritium iron sights
-    g.add(this.part(new THREE.BoxGeometry(0.020, 0.009, 0.010), this.matSteelDark, 0, 0.044, 0.018));
-    g.add(this.part(new THREE.BoxGeometry(0.006, 0.008, 0.010), this.matAccentTeal, 0, 0.044, -0.148));
+    // Iron sights + tritium front dot
+    g.add(this.part(new THREE.BoxGeometry(0.020, 0.008, 0.009), this.matClayDark, 0, 0.044, 0.018));
+    g.add(this.part(new THREE.BoxGeometry(0.005, 0.007, 0.009), this.matAccentTeal, 0, 0.044, -0.148));
 
     if (suppressed) {
-      const supp = new THREE.CylinderGeometry(0.014, 0.014, 0.175, 14);
+      const supp = new THREE.CylinderGeometry(0.013, 0.013, 0.165, 10);
       supp.rotateX(Math.PI * 0.5);
-      g.add(this.part(supp, this.matPolymer, 0, 0.024, -0.25));
-      const collar = new THREE.CylinderGeometry(0.016, 0.016, 0.018, 14);
+      g.add(this.part(supp, this.matClayDark, 0, 0.025, -0.25));
+      const collar = new THREE.CylinderGeometry(0.015, 0.015, 0.016, 10);
       collar.rotateX(Math.PI * 0.5);
-      g.add(this.part(collar, this.matAccentTeal, 0, 0.024, -0.172));
+      g.add(this.part(collar, this.matClayLight, 0, 0.025, -0.175));
     }
 
-    this.addHandGrip(g, 0, -0.035, 0.025, false);
+    this.addHands(g, 0, -0.035, 0.022, false);
     return g;
   }
 
   private buildSmg(): THREE.Group {
     const g = new THREE.Group();
-    g.add(this.part(new THREE.BoxGeometry(0.044, 0.058, 0.30), this.matSteelDark, 0, 0.015, -0.09));
-    g.add(this.part(new THREE.BoxGeometry(0.038, 0.022, 0.28), this.matGunmetal, 0, 0.048, -0.09));
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.092, 0.038), this.matGrip, 0, -0.045, 0.03, 0.18, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.024, 0.135, 0.032), this.matGunmetal, 0, -0.072, -0.085, -0.14, 0, 0));
+    const body = this.extrudeSideProfile(
+      [
+        [-0.06, -0.010],
+        [0.24, -0.008],
+        [0.25, 0.042],
+        [-0.05, 0.044],
+      ],
+      0.036,
+      0.003
+    );
+    g.add(this.part(body, this.matClayMid, 0, 0, 0));
 
-    // Integrated cylindrical suppressor shroud
-    const supp = new THREE.CylinderGeometry(0.019, 0.019, 0.19, 14);
+    const grip = this.extrudeSideProfile(
+      [
+        [-0.045, -0.088],
+        [-0.012, -0.088],
+        [0.005, -0.006],
+        [-0.028, -0.004],
+      ],
+      0.024,
+      0.002
+    );
+    g.add(this.part(grip, this.matGrip, 0, 0, 0));
+
+    const mag = this.extrudeSideProfile(
+      [
+        [0.095, -0.132],
+        [0.125, -0.128],
+        [0.110, -0.005],
+        [0.078, -0.005],
+      ],
+      0.022,
+      0.002
+    );
+    g.add(this.part(mag, this.matClayDark, 0, 0, 0));
+
+    const supp = new THREE.CylinderGeometry(0.017, 0.017, 0.19, 10);
     supp.rotateX(Math.PI * 0.5);
-    g.add(this.part(supp, this.matPolymer, 0, 0.020, -0.32));
+    g.add(this.part(supp, this.matClayDark, 0, 0.018, -0.33));
 
-    // Reflex red-dot optic
-    g.add(this.part(new THREE.BoxGeometry(0.030, 0.026, 0.068), this.matPolymer, 0, 0.070, -0.05));
-    g.add(this.part(new THREE.BoxGeometry(0.022, 0.018, 0.008), this.matLens, 0, 0.072, -0.082));
-    g.add(this.part(new THREE.BoxGeometry(0.046, 0.010, 0.12), this.matAccentTeal, 0, 0.018, -0.17));
-
-    this.addHandGrip(g, 0, -0.03, 0.03, true, -0.19);
+    this.addOptic(g, 0.046, -0.06);
+    this.addHands(g, 0, -0.03, 0.025, true, -0.19);
     return g;
+  }
+
+  private addOptic(g: THREE.Group, baseY: number, zCenter: number): void {
+    g.add(this.part(new THREE.BoxGeometry(0.024, 0.007, 0.13), this.matClayDark, 0, baseY, zCenter));
+    g.add(this.part(new THREE.BoxGeometry(0.004, 0.020, 0.038), this.matClayDark, -0.013, baseY + 0.013, zCenter));
+    g.add(this.part(new THREE.BoxGeometry(0.004, 0.020, 0.038), this.matClayDark, 0.013, baseY + 0.013, zCenter));
+    g.add(this.part(new THREE.BoxGeometry(0.030, 0.005, 0.038), this.matClayLight, 0, baseY + 0.024, zCenter));
+    g.add(this.part(new THREE.BoxGeometry(0.004, 0.004, 0.004), this.matAccentTeal, 0, baseY + 0.013, zCenter));
   }
 
   private buildRifle(suppressed: boolean): THREE.Group {
     const g = new THREE.Group();
-    const recMat = suppressed ? this.matSteelDark : this.matGunmetal;
 
-    // Upper & lower receiver + compact beveled stock
-    g.add(this.part(new THREE.BoxGeometry(0.042, 0.050, 0.32), recMat, 0, 0.016, -0.09));
-    g.add(this.part(new THREE.BoxGeometry(0.038, 0.024, 0.24), this.matPolymer, 0, -0.014, -0.07));
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.048, 0.13), this.matPolymer, 0, 0.008, 0.12, -0.04, 0, 0));
+    // Sculpted chamfered rifle receiver + angled upper + handguard
+    const receiver = this.extrudeSideProfile(
+      [
+        [-0.065, -0.018],
+        [0.21, -0.016],
+        [0.24, 0.036],
+        [-0.055, 0.038],
+      ],
+      0.036,
+      0.003
+    );
+    g.add(this.part(receiver, suppressed ? this.matClayDark : this.matClayMid, 0, 0, 0));
 
-    // Angled grip & curved magazine
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.095, 0.038), this.matGrip, 0, -0.048, 0.025, 0.22, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.026, 0.125, 0.048), suppressed ? this.matGunmetal : this.matAccentGold, 0, -0.078, -0.13, -0.16, 0, 0));
+    // Tapered front handguard
+    const handguard = this.extrudeSideProfile(
+      [
+        [0.20, -0.006],
+        [0.44, -0.002],
+        [0.43, 0.032],
+        [0.20, 0.034],
+      ],
+      0.034,
+      0.003
+    );
+    g.add(this.part(handguard, this.matClayDark, 0, 0, 0));
 
-    // Vented handguard + cylindrical barrel + muzzle/suppressor
-    g.add(this.part(new THREE.BoxGeometry(0.042, 0.046, 0.22), this.matPolymer, 0, 0.020, -0.35));
-    const barrel = new THREE.CylinderGeometry(0.010, 0.011, 0.22, 10);
+    // Compact skeletonized buttstock
+    const stock = this.extrudeSideProfile(
+      [
+        [-0.175, -0.035],
+        [-0.155, -0.035],
+        [-0.06, 0.002],
+        [-0.06, 0.028],
+        [-0.175, 0.022],
+      ],
+      0.024,
+      0.002
+    );
+    g.add(this.part(stock, this.matClayDark, 0, 0, 0));
+
+    // Ergonomic grip + curved banana magazine
+    const grip = this.extrudeSideProfile(
+      [
+        [-0.055, -0.090],
+        [-0.022, -0.092],
+        [0.002, -0.016],
+        [-0.030, -0.016],
+      ],
+      0.024,
+      0.002
+    );
+    g.add(this.part(grip, this.matGrip, 0, 0, 0));
+
+    const mag = this.extrudeSideProfile(
+      [
+        [0.145, -0.142],
+        [0.185, -0.135],
+        [0.155, -0.014],
+        [0.112, -0.014],
+      ],
+      0.022,
+      0.002
+    );
+    g.add(this.part(mag, suppressed ? this.matClayMid : this.matClayLight, 0, 0, 0));
+
+    // Cylindrical barrel + suppressor or muzzle brake
+    const barrel = new THREE.CylinderGeometry(0.009, 0.010, 0.22, 8);
     barrel.rotateX(Math.PI * 0.5);
-    g.add(this.part(barrel, this.matSteelDark, 0, 0.024, -0.52));
+    g.add(this.part(barrel, this.matClayLight, 0, 0.016, -0.52));
 
     if (suppressed) {
-      const supp = new THREE.CylinderGeometry(0.018, 0.018, 0.17, 14);
+      const supp = new THREE.CylinderGeometry(0.016, 0.016, 0.16, 10);
       supp.rotateX(Math.PI * 0.5);
-      g.add(this.part(supp, this.matPolymer, 0, 0.024, -0.60));
-      g.add(this.part(new THREE.BoxGeometry(0.048, 0.010, 0.14), this.matAccentTeal, 0, 0.020, -0.34));
+      g.add(this.part(supp, this.matClayDark, 0, 0.016, -0.60));
     } else {
-      const muzzle = new THREE.CylinderGeometry(0.016, 0.013, 0.055, 8);
+      const muzzle = new THREE.CylinderGeometry(0.015, 0.012, 0.05, 8);
       muzzle.rotateX(Math.PI * 0.5);
-      g.add(this.part(muzzle, this.matAccentGold, 0, 0.024, -0.64));
-      g.add(this.part(new THREE.BoxGeometry(0.048, 0.010, 0.14), this.matAccentGold, 0, 0.020, -0.34));
+      g.add(this.part(muzzle, this.matClayLight, 0, 0.016, -0.64));
     }
 
-    // Open U-frame reflex optic housing + glowing reticle emitter
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.010, 0.16), this.matSteelDark, 0, 0.048, -0.08));
-    g.add(this.part(new THREE.BoxGeometry(0.034, 0.008, 0.054), this.matPolymer, 0, 0.056, -0.07));
-    g.add(this.part(new THREE.BoxGeometry(0.005, 0.022, 0.042), this.matSteelDark, -0.015, 0.068, -0.07));
-    g.add(this.part(new THREE.BoxGeometry(0.005, 0.022, 0.042), this.matSteelDark, 0.015, 0.068, -0.07));
-    g.add(this.part(new THREE.BoxGeometry(0.035, 0.005, 0.042), this.matGunmetal, 0, 0.080, -0.07));
-    g.add(this.part(new THREE.BoxGeometry(0.004, 0.004, 0.006), this.matAccentTeal, 0, 0.068, -0.075));
-
-    this.addHandGrip(g, 0, -0.032, 0.028, true, -0.32);
+    this.addOptic(g, 0.041, -0.07);
+    this.addHands(g, 0, -0.032, 0.026, true, -0.29);
     return g;
   }
 
   private buildOperator(): THREE.Group {
     const g = new THREE.Group();
-    g.add(this.part(new THREE.BoxGeometry(0.052, 0.068, 0.42), this.matSteelDark, 0, 0.012, -0.14));
-    g.add(this.part(new THREE.BoxGeometry(0.044, 0.040, 0.22), this.matPolymer, 0, 0.010, -0.42));
+    const chassis = this.extrudeSideProfile(
+      [
+        [-0.09, -0.024],
+        [0.44, -0.010],
+        [0.43, 0.036],
+        [-0.08, 0.042],
+      ],
+      0.042,
+      0.004
+    );
+    g.add(this.part(chassis, this.matClayMid, 0, 0, 0));
 
-    // Long fluted sniper barrel + rectangular muzzle brake
-    const barrel = new THREE.CylinderGeometry(0.013, 0.015, 0.48, 12);
+    const barrel = new THREE.CylinderGeometry(0.012, 0.014, 0.48, 8);
     barrel.rotateX(Math.PI * 0.5);
-    g.add(this.part(barrel, this.matGunmetal, 0, 0.028, -0.58));
-    g.add(this.part(new THREE.BoxGeometry(0.044, 0.030, 0.065), this.matAccentGold, 0, 0.028, -0.83));
+    g.add(this.part(barrel, this.matClayDark, 0, 0.022, -0.62));
+    g.add(this.part(new THREE.BoxGeometry(0.038, 0.026, 0.06), this.matClayLight, 0, 0.022, -0.86));
 
-    // Cylindrical high-power scope tube + objective bell + sapphire lens
-    const scopeTube = new THREE.CylinderGeometry(0.018, 0.018, 0.24, 14);
+    // Scope tube + objective bell + lens
+    const scopeTube = new THREE.CylinderGeometry(0.016, 0.016, 0.23, 10);
     scopeTube.rotateX(Math.PI * 0.5);
-    g.add(this.part(scopeTube, this.matPolymer, 0, 0.076, -0.13));
-    const scopeBell = new THREE.CylinderGeometry(0.025, 0.018, 0.06, 14);
+    g.add(this.part(scopeTube, this.matClayDark, 0, 0.066, -0.13));
+    const scopeBell = new THREE.CylinderGeometry(0.023, 0.016, 0.055, 10);
     scopeBell.rotateX(Math.PI * 0.5);
-    g.add(this.part(scopeBell, this.matGunmetal, 0, 0.076, -0.26));
-    const lens = new THREE.CylinderGeometry(0.020, 0.020, 0.01, 14);
+    g.add(this.part(scopeBell, this.matClayLight, 0, 0.066, -0.26));
+    const lens = new THREE.CylinderGeometry(0.018, 0.018, 0.008, 10);
     lens.rotateX(Math.PI * 0.5);
-    g.add(this.part(lens, this.matLens, 0, 0.076, -0.01));
+    g.add(this.part(lens, this.matLens, 0, 0.066, -0.015));
 
-    // Mag, bolt handle & stock
-    g.add(this.part(new THREE.BoxGeometry(0.032, 0.085, 0.075), this.matGunmetal, 0, -0.055, -0.15));
-    g.add(this.part(new THREE.BoxGeometry(0.040, 0.062, 0.22), this.matPolymer, 0, 0.005, 0.17));
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.095, 0.038), this.matGrip, 0, -0.048, 0.025, 0.22, 0, 0));
+    const mag = this.extrudeSideProfile(
+      [
+        [0.12, -0.088],
+        [0.19, -0.086],
+        [0.18, -0.015],
+        [0.11, -0.015],
+      ],
+      0.028,
+      0.002
+    );
+    g.add(this.part(mag, this.matClayDark, 0, 0, 0));
 
-    this.addHandGrip(g, 0, -0.032, 0.028, true, -0.35);
+    const grip = this.extrudeSideProfile(
+      [
+        [-0.055, -0.090],
+        [-0.022, -0.092],
+        [0.002, -0.018],
+        [-0.030, -0.018],
+      ],
+      0.024,
+      0.002
+    );
+    g.add(this.part(grip, this.matGrip, 0, 0, 0));
+
+    this.addHands(g, 0, -0.032, 0.026, true, -0.32);
     return g;
   }
 
@@ -339,7 +485,6 @@ export class ViewModelRig {
   }): void {
     this.setActiveWeapon(params.weaponId);
 
-    // Hide viewmodel when Operator is scoped
     if (params.weaponId === 'OPERATOR' && params.isScoped) {
       this.root.visible = false;
       return;
@@ -358,12 +503,11 @@ export class ViewModelRig {
     const bobX = Math.cos(this.walkPhase) * 0.006 * Math.min(1, params.horizSpeed / 5.4);
     const bobY = Math.abs(Math.sin(this.walkPhase)) * 0.007 * Math.min(1, params.horizSpeed / 5.4);
 
-    // Valorant-style lower-right framing clearly above the bottom-right ammo HUD
-    const baseX = params.isADS ? 0.048 : 0.148;
+    const baseX = params.isADS ? 0.048 : 0.145;
     const baseY = params.isADS ? -0.048 : -0.068;
-    const baseZ = params.isADS ? -0.25 : -0.36;
-    const baseYaw = params.isADS ? 0.0 : 0.055;
-    const baseRoll = params.isADS ? 0.0 : -0.02;
+    const baseZ = params.isADS ? -0.25 : -0.35;
+    const baseYaw = params.isADS ? 0.0 : 0.065;
+    const baseRoll = params.isADS ? 0.0 : -0.015;
 
     const equipDip = params.equipRatio * -0.14;
     const reloadDip = Math.sin(params.reloadRatio * Math.PI) * -0.12;
@@ -382,16 +526,13 @@ export class ViewModelRig {
   }
 
   public dispose(): void {
-    this.matPolymer.dispose();
-    this.matGunmetal.dispose();
-    this.matSteelDark.dispose();
-    this.matAccentGold.dispose();
-    this.matAccentTeal.dispose();
+    this.matClayDark.dispose();
+    this.matClayMid.dispose();
+    this.matClayLight.dispose();
     this.matGrip.dispose();
-    this.matBlade.dispose();
-    this.matLens.dispose();
     this.matGlove.dispose();
-    this.matSleeve.dispose();
+    this.matAccentTeal.dispose();
+    this.matLens.dispose();
     this.root.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         (obj as THREE.Mesh).geometry.dispose();
