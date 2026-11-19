@@ -184,6 +184,7 @@ export class MatchEngine {
     isInDeadzone: boolean;
     scopeLevel: 0 | 1 | 2;
     isOperator: boolean;
+    isADS?: boolean;
     hitmarker?: HitTier | null;
     damageAngle?: number | null;
   }) => void;
@@ -197,6 +198,7 @@ export class MatchEngine {
         isInDeadzone: boolean;
         scopeLevel: 0 | 1 | 2;
         isOperator: boolean;
+        isADS?: boolean;
         hitmarker?: HitTier | null;
         damageAngle?: number | null;
       }) => void;
@@ -1393,13 +1395,15 @@ export class MatchEngine {
         this.localPlayer.state.vx ** 2 + this.localPlayer.state.vz ** 2
       );
 
+      const isADS =
+        this.localPlayer.weapons.isScoped() &&
+        (spec.id === 'SPECTRE' || spec.id === 'PHANTOM' || spec.id === 'VANDAL');
+
       this.viewmodel.update({
         dt: frameTime,
         weaponId: spec.id,
         isScoped: this.localPlayer.weapons.isScoped(),
-        isADS:
-          this.localPlayer.weapons.isScoped() &&
-          (spec.id === 'SPECTRE' || spec.id === 'PHANTOM' || spec.id === 'VANDAL'),
+        isADS,
         equipRatio:
           spec.equipTime > 0 ? this.localPlayer.weapons.equipTimer / spec.equipTime : 0,
         reloadRatio:
@@ -1423,6 +1427,7 @@ export class MatchEngine {
         isInDeadzone: this.localPlayer.state.isInDeadzone,
         scopeLevel: this.localPlayer.weapons.scopeLevel,
         isOperator: spec.id === 'OPERATOR',
+        isADS,
       });
     }
 

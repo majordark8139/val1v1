@@ -504,6 +504,7 @@ export class RemotePlayer {
   }
 
   public getPose(): PlayerPose {
+    const moveSpeed = Math.sqrt(this.state.vx * this.state.vx + this.state.vz * this.state.vz);
     return {
       x: this.state.x,
       y: this.state.y,
@@ -513,6 +514,7 @@ export class RemotePlayer {
       crouchAlpha: this.state.crouchAlpha,
       stridePhase: this.stridePhase,
       strideAmp: this.strideAmp,
+      moveSpeed,
     };
   }
 

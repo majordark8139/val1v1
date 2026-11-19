@@ -7,6 +7,7 @@ export interface CrosshairFrameUpdate {
   isInDeadzone: boolean;
   scopeLevel: 0 | 1 | 2;
   isOperator: boolean;
+  isADS?: boolean;
   hitmarker?: HitTier | null;
   damageAngle?: number | null;
 }
@@ -46,9 +47,10 @@ export const CrosshairRenderer = React.forwardRef<CrosshairRendererHandle, Props
       active: boolean;
       level: 0 | 1 | 2;
       deadzone: boolean;
-    }>({ active: false, level: 0, deadzone: true });
+      adsOptic: boolean;
+    }>({ active: false, level: 0, deadzone: true, adsOptic: false });
 
-    const scopeRef = useRef({ active: false, level: 0 as 0 | 1 | 2, deadzone: true });
+    const scopeRef = useRef({ active: false, level: 0 as 0 | 1 | 2, deadzone: true, adsOptic: false });
     const lastGapRef = useRef(-999);
 
     const fxRef = useRef({
@@ -159,15 +161,18 @@ export const CrosshairRenderer = React.forwardRef<CrosshairRendererHandle, Props
         applyGapToDom(gapPx);
 
         const nextScoped = evt.isOperator && evt.scopeLevel > 0;
+        const nextAdsOptic = Boolean(evt.isADS) && !nextScoped;
         if (
           scopeRef.current.active !== nextScoped ||
           scopeRef.current.level !== evt.scopeLevel ||
+          scopeRef.current.adsOptic !== nextAdsOptic ||
           (nextScoped && scopeRef.current.deadzone !== evt.isInDeadzone)
         ) {
           scopeRef.current = {
             active: nextScoped,
             level: evt.scopeLevel,
             deadzone: evt.isInDeadzone,
+            adsOptic: nextAdsOptic,
           };
           setScopeOverlay({ ...scopeRef.current });
         }
@@ -214,8 +219,8 @@ export const CrosshairRenderer = React.forwardRef<CrosshairRendererHandle, Props
         data-testid="crosshair-canvas"
         className="fixed inset-0 pointer-events-none z-20 overflow-hidden"
       >
-        {/* Standard GPU-Composited Tactical Crosshair (Zero Canvas Uploads) */}
-        {!scopeOverlay.active && (
+        {/* Standard GPU-Composited Tactical Crosshair (hidden during sniper scope AND true 3D optic ADS) */}
+        {!scopeOverlay.active && !scopeOverlay.adsOptic && (
           <>
             <div
               ref={topRef}

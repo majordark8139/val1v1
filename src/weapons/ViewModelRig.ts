@@ -1,6 +1,147 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { WeaponId } from '../config/WeaponData';
-import { createStudioMatcapTexture } from '../engine/ProceduralTextures';
+
+interface WeaponModelConfig {
+  file: string;
+  scale: number;
+  hipPos: [number, number, number];
+  hipRot: [number, number, number];
+  /** Whether a 3D open-frame holographic/red-dot optic is mounted atop the receiver */
+  hasOptic: boolean;
+  /** Center of the 3D optic dot in scaled weapon-group space (camera aligns to (0, -opticY, adsZ) during ADS!) */
+  opticPos: [number, number, number];
+  /** Height of the receiver top in scaled space so the optic riser rail sits flush on the gun */
+  receiverTopY: number;
+  adsZ: number;
+  isSniper?: boolean;
+}
+
+/**
+ * Real open-source GitHub GLB gun models (guyz/tinystrike, zero first-person arms).
+ * Every weapon is pre-oriented along -Z forward with +Y up.
+ * Receiver & front-sight heights were measured directly from the GLB vertex buffers so the
+ * 3D holosight window clears both the receiver and front sight post cleanly during ADS.
+ */
+const WEAPON_MODEL_CONFIGS: Record<WeaponId, WeaponModelConfig> = {
+  VANDAL: {
+    file: 'ak47.glb',
+    scale: 0.85,
+    hipPos: [0.21, -0.25, -0.45],
+    hipRot: [0.0, 0.04, -0.01],
+    hasOptic: true,
+    // ak47 raw receiverTop=0.217, frontTop=0.261 -> scaled 0.184 / 0.222 -> optic center at Y=0.242 clears front sight cleanly!
+    opticPos: [0.0, 0.242, -0.05],
+    receiverTopY: 0.180,
+    adsZ: -0.11,
+  },
+  PHANTOM: {
+    file: 'm4a1.glb',
+    scale: 0.85,
+    hipPos: [0.21, -0.25, -0.45],
+    hipRot: [0.0, 0.04, -0.01],
+    hasOptic: true,
+    // m4a1 raw receiverTop=0.236, frontTop=0.255 -> scaled 0.200 / 0.217 -> optic center at Y=0.238 clears cleanly!
+    opticPos: [0.0, 0.238, -0.05],
+    receiverTopY: 0.194,
+    adsZ: -0.11,
+  },
+  OPERATOR: {
+    file: 'awp.glb',
+    scale: 0.84,
+    hipPos: [0.21, -0.24, -0.42],
+    hipRot: [0.0, 0.04, -0.01],
+    hasOptic: false,
+    // Align AWP built-in scope tube center during zoom-in transition before full-screen SVG sniper scope engages
+    opticPos: [0.0, 0.175, -0.06],
+    receiverTopY: 0.150,
+    adsZ: -0.06,
+    isSniper: true,
+  },
+  SPECTRE: {
+    file: 'mp5.glb',
+    scale: 0.92,
+    hipPos: [0.19, -0.20, -0.42],
+    hipRot: [0.0, 0.04, -0.01],
+    hasOptic: true,
+    // mp5 raw receiverTop=0.175, frontTop=0.151 -> scaled 0.161 / 0.139 -> optic center at Y=0.192 clears cleanly!
+    opticPos: [0.0, 0.192, -0.06],
+    receiverTopY: 0.154,
+    adsZ: -0.11,
+  },
+  CLASSIC: {
+    file: 'glock.glb',
+    scale: 1.25,
+    hipPos: [0.16, -0.13, -0.34],
+    hipRot: [0.0, 0.04, 0.0],
+    hasOptic: false,
+    opticPos: [0.0, 0.09, -0.04],
+    receiverTopY: 0.08,
+    adsZ: -0.22,
+  },
+  GHOST: {
+    file: 'usp.glb',
+    scale: 1.22,
+    hipPos: [0.16, -0.13, -0.34],
+    hipRot: [0.0, 0.04, 0.0],
+    hasOptic: false,
+    opticPos: [0.0, 0.09, -0.04],
+    receiverTopY: 0.08,
+    adsZ: -0.22,
+  },
+  SHERIFF: {
+    file: 'deagle.glb',
+    scale: 1.25,
+    hipPos: [0.16, -0.135, -0.34],
+    hipRot: [0.0, 0.04, 0.0],
+    hasOptic: false,
+    opticPos: [0.0, 0.10, -0.04],
+    receiverTopY: 0.09,
+    adsZ: -0.22,
+  },
+  KNIFE: {
+    file: 'knife.glb',
+    scale: 1.20,
+    hipPos: [0.17, -0.13, -0.32],
+    hipRot: [0.18, 0.35, -0.22],
+    hasOptic: false,
+    opticPos: [0.0, 0.0, 0.0],
+    receiverTopY: 0.0,
+    adsZ: -0.32,
+  },
+};
+
+/**
+ * Calibrated flat unlit color lookup for the GitHub GLB weapon materials so multi-part
+ * guns stay crisp and readable with ZERO lighting, ZERO reflections, and ZERO shadows.
+ */
+function resolveFlatWeaponColor(matName: string): number {
+  const n = matName.toLowerCase();
+  if (n.includes('wooddark')) return 0x6b3d20;
+  if (n.includes('wood')) return 0x9c5c32;
+  if (n.includes('awpgreendark')) return 0x354a2d;
+  if (n.includes('awpgreen')) return 0x4f6d43;
+  if (n.includes('chrome')) return 0xc8cfd8;
+  if (n.includes('edge')) return 0xe8eff7;
+  if (n.includes('blade')) return 0xb4bfcc;
+  if (n.includes('polymerlight')) return 0x545f70;
+  if (n.includes('polymer')) return 0x343b47;
+  if (n.includes('gunmetal')) return 0x4b5566;
+  if (n.includes('mag')) return 0x3e4450;
+  if (n.includes('grip')) return 0x20252e;
+  if (n.includes('gundark')) return 0x2a303a;
+  return 0x434c5c;
+}
+
+function getAssetBaseUrl(): string {
+  try {
+    const env = (import.meta as unknown as { env?: { BASE_URL?: string } }).env;
+    const base = env?.BASE_URL || './';
+    return base.endsWith('/') ? base : `${base}/`;
+  } catch {
+    return './';
+  }
+}
 
 export class ViewModelRig {
   public readonly root = new THREE.Group();
@@ -11,82 +152,40 @@ export class ViewModelRig {
   private kickPitch = 0;
   private swingAngle = 0;
   private walkPhase = 0;
+  private adsBlend = 0;
+  private scopeBlend = 0;
 
-  private readonly matcapTextures: THREE.Texture[] = [];
-  private readonly matClayDark: THREE.MeshMatcapMaterial;
-  private readonly matClayMid: THREE.MeshMatcapMaterial;
-  private readonly matClayLight: THREE.MeshMatcapMaterial;
-  private readonly matGrip: THREE.MeshMatcapMaterial;
-  private readonly matGlove: THREE.MeshMatcapMaterial;
-  private readonly matSleeve: THREE.MeshMatcapMaterial;
-  private readonly matAccentTeal: THREE.MeshBasicMaterial;
-  private readonly matLens: THREE.MeshMatcapMaterial;
+  private disposed = false;
+  private readonly outlineMat = new THREE.LineBasicMaterial({
+    color: 0x11151c,
+    transparent: true,
+    opacity: 0.52,
+  });
+  private readonly opticFrameMat = new THREE.MeshBasicMaterial({ color: 0x1e242e });
+  private readonly opticGlassMat = new THREE.MeshBasicMaterial({
+    color: 0x00f5d4,
+    transparent: true,
+    opacity: 0.06,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  private readonly opticReticleMat = new THREE.MeshBasicMaterial({
+    color: 0xff2a3c,
+    depthTest: true,
+    depthWrite: false,
+  });
+  private readonly createdMaterials: THREE.Material[] = [];
 
   constructor() {
-    // Blender Workbench satin clay MatCaps for razor-sharp weapon bevels at 0 lighting cost
-    const texDark = createStudioMatcapTexture({
-      highlight: '#596170',
-      midtone: '#343a45',
-      shadow: '#1b1f27',
-      specular: 0.22,
-    });
-    const texMid = createStudioMatcapTexture({
-      highlight: '#959eab',
-      midtone: '#67707e',
-      shadow: '#3b414c',
-      specular: 0.18,
-    });
-    const texLight = createStudioMatcapTexture({
-      highlight: '#dde1e8',
-      midtone: '#b2b8c4',
-      shadow: '#737985',
-      specular: 0.24,
-    });
-    const texGrip = createStudioMatcapTexture({
-      highlight: '#3b404a',
-      midtone: '#21252d',
-      shadow: '#101218',
-      specular: 0.08,
-    });
-    const texGlove = createStudioMatcapTexture({
-      highlight: '#424956',
-      midtone: '#272c36',
-      shadow: '#141820',
-      specular: 0.03,
-    });
-    const texSleeve = createStudioMatcapTexture({
-      highlight: '#495262',
-      midtone: '#2e3542',
-      shadow: '#191e27',
-      specular: 0.02,
-    });
-    const texLens = createStudioMatcapTexture({
-      highlight: '#9ee8f5',
-      midtone: '#3c7a91',
-      shadow: '#162d38',
-      specular: 0.45,
-    });
-
-    this.matcapTextures.push(texDark, texMid, texLight, texGrip, texGlove, texSleeve, texLens);
-
-    this.matClayDark = new THREE.MeshMatcapMaterial({ matcap: texDark });
-    this.matClayMid = new THREE.MeshMatcapMaterial({ matcap: texMid });
-    this.matClayLight = new THREE.MeshMatcapMaterial({ matcap: texLight });
-    this.matGrip = new THREE.MeshMatcapMaterial({ matcap: texGrip });
-    this.matGlove = new THREE.MeshMatcapMaterial({ matcap: texGlove });
-    this.matSleeve = new THREE.MeshMatcapMaterial({ matcap: texSleeve });
-    this.matAccentTeal = new THREE.MeshBasicMaterial({ color: 0x00e6c7 });
-    this.matLens = new THREE.MeshMatcapMaterial({ matcap: texLens });
-
     this.weaponGroups = {
-      KNIFE: this.buildKnife(),
-      CLASSIC: this.buildPistol(false, false),
-      GHOST: this.buildPistol(true, false),
-      SHERIFF: this.buildPistol(false, true),
-      SPECTRE: this.buildSmg(),
-      PHANTOM: this.buildRifle(true),
-      VANDAL: this.buildRifle(false),
-      OPERATOR: this.buildOperator(),
+      KNIFE: new THREE.Group(),
+      CLASSIC: new THREE.Group(),
+      GHOST: new THREE.Group(),
+      SHERIFF: new THREE.Group(),
+      SPECTRE: new THREE.Group(),
+      PHANTOM: new THREE.Group(),
+      VANDAL: new THREE.Group(),
+      OPERATOR: new THREE.Group(),
     };
 
     for (const key of Object.keys(this.weaponGroups) as WeaponId[]) {
@@ -94,494 +193,124 @@ export class ViewModelRig {
       grp.visible = key === this.currentWeaponId;
       this.root.add(grp);
     }
+
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      this.loadAllWeaponModels();
+    }
   }
 
-  private part(
-    geo: THREE.BufferGeometry,
-    mat: THREE.Material,
-    x: number,
-    y: number,
-    z: number,
-    rx = 0,
-    ry = 0,
-    rz = 0
-  ): THREE.Mesh {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    m.rotation.set(rx, ry, rz);
-    return m;
+  private loadAllWeaponModels(): void {
+    const loader = new GLTFLoader();
+    const baseUrl = `${getAssetBaseUrl()}models/weapons/`;
+
+    for (const id of Object.keys(WEAPON_MODEL_CONFIGS) as WeaponId[]) {
+      const cfg = WEAPON_MODEL_CONFIGS[id];
+      loader.load(
+        `${baseUrl}${cfg.file}`,
+        (gltf) => {
+          if (this.disposed) return;
+
+          const model = gltf.scene;
+          const meshesToOutline: THREE.Mesh[] = [];
+
+          // Convert every PBR material to 100% unlit flat MeshBasicMaterial (zero reflections/shadows/lights)
+          model.traverse((obj) => {
+            const mesh = obj as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            mesh.castShadow = false;
+            mesh.receiveShadow = false;
+
+            const origMats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            const converted = origMats.map((rawMat) => {
+              const mat = new THREE.MeshBasicMaterial({
+                color: resolveFlatWeaponColor(rawMat.name || ''),
+              });
+              this.createdMaterials.push(mat);
+              rawMat.dispose();
+              return mat;
+            });
+            mesh.material = Array.isArray(mesh.material) ? converted : converted[0];
+            meshesToOutline.push(mesh);
+          });
+
+          // Add crisp thin dark outline edges on each weapon sub-mesh for razor-sharp unlit silhouette
+          for (const mesh of meshesToOutline) {
+            const edgesGeo = new THREE.EdgesGeometry(mesh.geometry, 26);
+            const lines = new THREE.LineSegments(edgesGeo, this.outlineMat);
+            lines.renderOrder = 1;
+            mesh.add(lines);
+          }
+
+          const container = this.weaponGroups[id];
+          model.scale.setScalar(cfg.scale);
+          container.add(model);
+
+          // Mount a clean open-frame 3D Holographic / Red-Dot Optic directly atop the receiver
+          // positioned at exact cfg.opticPos so camera (0, 0) looks dead-center through the open window!
+          if (cfg.hasOptic) {
+            const optic = this.buildHolosightOptic(cfg.opticPos[1] - cfg.receiverTopY);
+            optic.position.set(cfg.opticPos[0], cfg.opticPos[1], cfg.opticPos[2]);
+            container.add(optic);
+          }
+        },
+        undefined,
+        (err) => {
+          console.warn(`Weapon model ${cfg.file} failed to load:`, err);
+        }
+      );
+    }
   }
 
   /**
-   * Extrudes a 2D (z, y) side-profile silhouette centered along X so weapons have
-   * authentic chamfered Blender-like angles instead of plain boxes.
-   * Shape coordinates: +x = forward (-Z in weapon space), +y = up (+Y).
+   * Builds a clean open-window 3D tactical red-dot / holo sight centered at local (0, 0, 0)
+   * with a flush Picatinny riser connecting seamlessly down onto the receiver top.
+   * When ADS aligns the weapon to (0, -opticY, adsZ), the camera looks straight through the open window
+   * and aims using the glowing center red dot with zero receiver obstruction.
    */
-  private extrudeSideProfile(
-    pts: [number, number][],
-    thickness: number,
-    bevel = 0.003
-  ): THREE.BufferGeometry {
-    const shape = new THREE.Shape();
-    shape.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) {
-      shape.lineTo(pts[i][0], pts[i][1]);
-    }
-    shape.closePath();
-
-    const geo = new THREE.ExtrudeGeometry(shape, {
-      depth: thickness,
-      bevelEnabled: bevel > 0,
-      bevelThickness: bevel,
-      bevelSize: bevel,
-      bevelSegments: 1,
-    });
-    geo.translate(0, 0, -thickness * 0.5);
-    geo.rotateY(Math.PI * 0.5);
-    return geo;
-  }
-
-  /**
-   * Connects two exact 3D points (start -> end) with a tapered sculpted limb/sleeve
-   * so forearms can never float or detach from hands at any angle.
-   */
-  private addTaperedConnector(
-    g: THREE.Group,
-    mat: THREE.Material,
-    x1: number,
-    y1: number,
-    z1: number,
-    x2: number,
-    y2: number,
-    z2: number,
-    rStart: number,
-    rEnd: number,
-    flatScaleZ = 0.84
-  ): void {
-    const a = new THREE.Vector3(x1, y1, z1);
-    const b = new THREE.Vector3(x2, y2, z2);
-    const dir = new THREE.Vector3().subVectors(b, a);
-    const len = dir.length();
-    if (len < 1e-4) return;
-    // Slight oval cross-section + faceted 8-sided Blender clay silhouette (no glossy tube pipe look)
-    const geo = new THREE.CylinderGeometry(rEnd, rStart, len, 8);
-    geo.scale(1.0, 1.0, flatScaleZ);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(a).add(b).multiplyScalar(0.5);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-    g.add(mesh);
-  }
-
-  /**
-   * Sculpted anatomical tactical gloved hands & connected forearm sleeves angled cleanly to screen corners.
-   */
-  private addHands(
-    g: THREE.Group,
-    gx: number,
-    gy: number,
-    gz: number,
-    twoHanded: boolean,
-    supportZ = -0.24
-  ): void {
-    // Primary trigger hand: sculpted palm, knuckle guard & thumb
-    g.add(this.part(new THREE.BoxGeometry(0.046, 0.048, 0.056), this.matGlove, gx, gy, gz, 0.22, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.050, 0.013, 0.032), this.matClayDark, gx, gy + 0.020, gz - 0.010, 0.22, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.018, 0.018, 0.040), this.matGlove, gx - 0.022, gy + 0.017, gz - 0.016, 0.26, 0.24, 0));
-
-    // Connected wrist cuff -> matte forearm sleeve exiting cleanly toward bottom-right corner
-    this.addTaperedConnector(
-      g,
-      this.matClayDark,
-      gx + 0.004,
-      gy - 0.010,
-      gz + 0.016,
-      gx + 0.036,
-      gy - 0.046,
-      gz + 0.064,
-      0.027,
-      0.032
-    );
-    this.addTaperedConnector(
-      g,
-      this.matSleeve,
-      gx + 0.032,
-      gy - 0.042,
-      gz + 0.060,
-      gx + 0.165,
-      gy - 0.195,
-      gz + 0.255,
-      0.035,
-      0.052
-    );
-
-    if (twoHanded) {
-      // Support hand cradling cleanly underneath handguard
-      const hx = -0.006;
-      const hy = gy + 0.006;
-      const hz = supportZ;
-      g.add(this.part(new THREE.BoxGeometry(0.048, 0.034, 0.064), this.matGlove, hx, hy, hz, 0.05, 0.08, 0));
-      g.add(this.part(new THREE.BoxGeometry(0.015, 0.020, 0.042), this.matGlove, hx - 0.023, hy + 0.018, hz - 0.008, 0.05, 0.12, 0));
-      g.add(this.part(new THREE.BoxGeometry(0.044, 0.011, 0.034), this.matClayDark, hx, hy - 0.013, hz, 0.05, 0.08, 0));
-
-      // Connected support wrist -> compact bent forearm dipping naturally downward-left off the bottom edge
-      this.addTaperedConnector(
-        g,
-        this.matClayDark,
-        hx - 0.008,
-        hy - 0.012,
-        hz + 0.012,
-        hx - 0.044,
-        hy - 0.064,
-        hz + 0.046,
-        0.028,
-        0.034
-      );
-      this.addTaperedConnector(
-        g,
-        this.matSleeve,
-        hx - 0.040,
-        hy - 0.060,
-        hz + 0.042,
-        hx - 0.155,
-        hy - 0.235,
-        hz + 0.125,
-        0.036,
-        0.052
-      );
-    }
-  }
-
-  private buildKnife(): THREE.Group {
-    const g = new THREE.Group();
-    const handle = this.extrudeSideProfile(
-      [
-        [-0.062, -0.013],
-        [0.052, -0.011],
-        [0.060, 0.014],
-        [-0.052, 0.016],
-      ],
-      0.018,
-      0.003
-    );
-    g.add(this.part(handle, this.matGrip, 0, 0, 0));
-    // Sculpted grip bolster & pommel ring
-    const ring = new THREE.TorusGeometry(0.014, 0.0042, 6, 12);
-    ring.rotateY(Math.PI * 0.5);
-    g.add(this.part(ring, this.matClayLight, 0, -0.002, 0.074));
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.046, 0.015), this.matClayDark, 0, 0.004, -0.06));
-    // Swept tactical combat blade with fuller groove
-    const blade = this.extrudeSideProfile(
-      [
-        [0.06, -0.010],
-        [0.215, -0.001],
-        [0.262, 0.018],
-        [0.185, 0.025],
-        [0.06, 0.021],
-      ],
-      0.005,
-      0.002
-    );
-    g.add(this.part(blade, this.matClayLight, 0, 0, 0));
-    g.add(this.part(new THREE.BoxGeometry(0.007, 0.004, 0.135), this.matClayDark, 0, 0.006, -0.145));
-    g.add(this.part(new THREE.BoxGeometry(0.004, 0.004, 0.125), this.matAccentTeal, 0, 0.001, -0.142));
-    this.addHands(g, 0.006, -0.010, 0.010, false);
-    g.rotation.set(0.20, 0.42, -0.24);
-    return g;
-  }
-
-  private buildPistol(suppressed: boolean, revolver: boolean): THREE.Group {
+  private buildHolosightOptic(heightAboveReceiver: number): THREE.Group {
     const g = new THREE.Group();
 
-    const grip = this.extrudeSideProfile(
-      [
-        [-0.042, -0.088],
-        [0.004, -0.090],
-        [0.024, -0.005],
-        [-0.020, 0.005],
-      ],
-      0.026,
-      0.003
-    );
-    g.add(this.part(grip, this.matGrip, 0, 0, 0));
+    const winW = 0.048;
+    const winH = 0.036;
+    const frameT = 0.0038;
+    const depth = 0.042;
 
-    g.add(this.part(new THREE.BoxGeometry(0.009, 0.005, 0.042), this.matClayDark, 0, -0.026, -0.036));
-    g.add(this.part(new THREE.BoxGeometry(0.009, 0.024, 0.006), this.matClayDark, 0, -0.014, -0.056));
-    g.add(this.part(new THREE.BoxGeometry(0.004, 0.014, 0.005), this.matClayLight, 0, -0.009, -0.030, -0.25, 0, 0));
+    const addFrameBar = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mesh = new THREE.Mesh(geo, this.opticFrameMat);
+      mesh.position.set(x, y, z);
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.outlineMat);
+      mesh.add(edges);
+      g.add(mesh);
+    };
 
-    const frame = this.extrudeSideProfile(
-      [
-        [-0.025, -0.004],
-        [0.155, -0.004],
-        [0.162, 0.014],
-        [-0.032, 0.014],
-      ],
-      0.026,
-      0.002
-    );
-    g.add(this.part(frame, this.matClayDark, 0, 0, 0));
+    // Picatinny rail riser pedestal extending cleanly from below the window frame down onto the receiver top
+    const frameBottomY = -(winH * 0.5 + frameT);
+    const riserH = Math.max(0.012, heightAboveReceiver + frameBottomY + 0.008);
+    addFrameBar(0.024, riserH, depth + 0.016, 0, frameBottomY - riserH * 0.5, 0);
 
-    if (revolver) {
-      const drum = new THREE.CylinderGeometry(0.025, 0.025, 0.056, 8);
-      drum.rotateX(Math.PI * 0.5);
-      g.add(this.part(drum, this.matClayLight, 0, 0.026, -0.045));
-      const shroud = this.extrudeSideProfile(
-        [
-          [0.075, 0.012],
-          [0.248, 0.014],
-          [0.238, 0.044],
-          [0.075, 0.044],
-        ],
-        0.022,
-        0.0025
-      );
-      g.add(this.part(shroud, this.matClayMid, 0, 0, 0));
-      const barrel = new THREE.CylinderGeometry(0.009, 0.009, 0.175, 8);
-      barrel.rotateX(Math.PI * 0.5);
-      g.add(this.part(barrel, this.matClayDark, 0, 0.032, -0.165));
-    } else {
-      const slide = this.extrudeSideProfile(
-        [
-          [-0.035, 0.013],
-          [0.162, 0.013],
-          [0.158, 0.040],
-          [-0.026, 0.040],
-        ],
-        0.028,
-        0.003
-      );
-      g.add(this.part(slide, suppressed ? this.matClayDark : this.matClayMid, 0, 0, 0));
-      for (let i = 0; i < 4; i++) {
-        g.add(this.part(new THREE.BoxGeometry(0.035, 0.020, 0.004), this.matGrip, 0, 0.026, 0.004 + i * 0.008));
-      }
-      const barrel = new THREE.CylinderGeometry(0.008, 0.008, 0.03, 8);
-      barrel.rotateX(Math.PI * 0.5);
-      g.add(this.part(barrel, this.matClayDark, 0, 0.025, -0.172));
-    }
+    // Thin top, bottom, left, right housing rails forming a wide clear sight window
+    addFrameBar(winW + frameT * 2, frameT, depth, 0, winH * 0.5 + frameT * 0.5, 0);
+    addFrameBar(winW + frameT * 2, frameT, depth, 0, -(winH * 0.5 + frameT * 0.5), 0);
+    addFrameBar(frameT, winH, depth, -(winW * 0.5 + frameT * 0.5), 0, 0);
+    addFrameBar(frameT, winH, depth, winW * 0.5 + frameT * 0.5, 0, 0);
 
-    g.add(this.part(new THREE.BoxGeometry(0.020, 0.008, 0.009), this.matClayDark, 0, 0.044, 0.018));
-    g.add(this.part(new THREE.BoxGeometry(0.005, 0.007, 0.009), this.matAccentTeal, 0, 0.044, -0.148));
+    // Subtle unlit optic lens tint inside the open window
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), this.opticGlassMat);
+    glass.position.set(0, 0, -0.002);
+    g.add(glass);
 
-    if (suppressed) {
-      const supp = new THREE.CylinderGeometry(0.013, 0.013, 0.165, 10);
-      supp.rotateX(Math.PI * 0.5);
-      g.add(this.part(supp, this.matClayDark, 0, 0.025, -0.25));
-      const collar = new THREE.CylinderGeometry(0.015, 0.015, 0.016, 10);
-      collar.rotateX(Math.PI * 0.5);
-      g.add(this.part(collar, this.matClayLight, 0, 0.025, -0.175));
-    }
+    // Crisp glowing centered red-dot reticle + fine holo ring at exact (0, 0, 0)
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0012, 12), this.opticReticleMat);
+    dot.position.set(0, 0, 0.001);
+    dot.renderOrder = 5;
+    g.add(dot);
 
-    this.addHands(g, 0, -0.035, 0.022, false);
-    return g;
-  }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.0068, 0.0076, 24), this.opticReticleMat);
+    ring.position.set(0, 0, 0.001);
+    ring.renderOrder = 5;
+    g.add(ring);
 
-  private buildSmg(): THREE.Group {
-    const g = new THREE.Group();
-    const body = this.extrudeSideProfile(
-      [
-        [-0.06, -0.010],
-        [0.24, -0.008],
-        [0.25, 0.042],
-        [-0.05, 0.044],
-      ],
-      0.036,
-      0.003
-    );
-    g.add(this.part(body, this.matClayMid, 0, 0, 0));
-
-    const grip = this.extrudeSideProfile(
-      [
-        [-0.045, -0.088],
-        [-0.012, -0.088],
-        [0.005, -0.006],
-        [-0.028, -0.004],
-      ],
-      0.024,
-      0.002
-    );
-    g.add(this.part(grip, this.matGrip, 0, 0, 0));
-
-    const mag = this.extrudeSideProfile(
-      [
-        [0.095, -0.132],
-        [0.125, -0.128],
-        [0.110, -0.005],
-        [0.078, -0.005],
-      ],
-      0.022,
-      0.002
-    );
-    g.add(this.part(mag, this.matClayDark, 0, 0, 0));
-
-    const supp = new THREE.CylinderGeometry(0.017, 0.017, 0.19, 10);
-    supp.rotateX(Math.PI * 0.5);
-    g.add(this.part(supp, this.matClayDark, 0, 0.018, -0.33));
-
-    this.addOptic(g, 0.046, -0.06);
-    this.addHands(g, 0, -0.03, 0.025, true, -0.18);
-    return g;
-  }
-
-  private addOptic(g: THREE.Group, baseY: number, zCenter: number): void {
-    g.add(this.part(new THREE.BoxGeometry(0.024, 0.007, 0.13), this.matClayDark, 0, baseY, zCenter));
-    g.add(this.part(new THREE.BoxGeometry(0.004, 0.020, 0.038), this.matClayDark, -0.013, baseY + 0.013, zCenter));
-    g.add(this.part(new THREE.BoxGeometry(0.004, 0.020, 0.038), this.matClayDark, 0.013, baseY + 0.013, zCenter));
-    g.add(this.part(new THREE.BoxGeometry(0.030, 0.005, 0.038), this.matClayLight, 0, baseY + 0.024, zCenter));
-    g.add(this.part(new THREE.BoxGeometry(0.004, 0.004, 0.004), this.matAccentTeal, 0, baseY + 0.013, zCenter));
-  }
-
-  private buildRifle(suppressed: boolean): THREE.Group {
-    const g = new THREE.Group();
-
-    // Sculpted chamfered rifle receiver
-    const receiver = this.extrudeSideProfile(
-      [
-        [-0.065, -0.018],
-        [0.21, -0.016],
-        [0.24, 0.036],
-        [-0.055, 0.038],
-      ],
-      0.036,
-      0.003
-    );
-    g.add(this.part(receiver, suppressed ? this.matClayDark : this.matClayMid, 0, 0, 0));
-
-    // Upper dust cover bevel & charging handle
-    g.add(this.part(new THREE.BoxGeometry(0.028, 0.012, 0.18), this.matClayLight, 0, 0.038, -0.06));
-    g.add(this.part(new THREE.BoxGeometry(0.024, 0.008, 0.010), this.matClayLight, 0.024, 0.024, -0.10));
-
-    // Tapered front handguard + cooling vent ribs
-    const handguard = this.extrudeSideProfile(
-      [
-        [0.20, -0.008],
-        [0.44, -0.003],
-        [0.43, 0.032],
-        [0.20, 0.034],
-      ],
-      0.034,
-      0.003
-    );
-    g.add(this.part(handguard, this.matClayDark, 0, 0, 0));
-    for (let i = 0; i < 3; i++) {
-      g.add(this.part(new THREE.BoxGeometry(0.042, 0.008, 0.022), this.matGrip, 0, 0.016, -0.26 - i * 0.046));
-    }
-
-    // Skeletonized buttstock
-    const stock = this.extrudeSideProfile(
-      [
-        [-0.175, -0.035],
-        [-0.155, -0.035],
-        [-0.06, 0.002],
-        [-0.06, 0.028],
-        [-0.175, 0.022],
-      ],
-      0.024,
-      0.002
-    );
-    g.add(this.part(stock, this.matClayDark, 0, 0, 0));
-
-    // Ergonomic pistol grip + curved banana magazine
-    const grip = this.extrudeSideProfile(
-      [
-        [-0.055, -0.090],
-        [-0.022, -0.092],
-        [0.002, -0.016],
-        [-0.030, -0.016],
-      ],
-      0.024,
-      0.002
-    );
-    g.add(this.part(grip, this.matGrip, 0, 0, 0));
-
-    const mag = this.extrudeSideProfile(
-      [
-        [0.145, -0.142],
-        [0.185, -0.135],
-        [0.155, -0.014],
-        [0.112, -0.014],
-      ],
-      0.022,
-      0.002
-    );
-    g.add(this.part(mag, suppressed ? this.matClayMid : this.matClayLight, 0, 0, 0));
-
-    // Cylindrical barrel + gas block + suppressor or slanted muzzle brake
-    const barrel = new THREE.CylinderGeometry(0.009, 0.010, 0.22, 8);
-    barrel.rotateX(Math.PI * 0.5);
-    g.add(this.part(barrel, this.matClayLight, 0, 0.016, -0.52));
-
-    if (suppressed) {
-      const supp = new THREE.CylinderGeometry(0.016, 0.016, 0.17, 10);
-      supp.rotateX(Math.PI * 0.5);
-      g.add(this.part(supp, this.matClayDark, 0, 0.016, -0.60));
-    } else {
-      const gasTube = new THREE.CylinderGeometry(0.006, 0.006, 0.14, 6);
-      gasTube.rotateX(Math.PI * 0.5);
-      g.add(this.part(gasTube, this.matClayMid, 0, 0.031, -0.46));
-      const muzzle = new THREE.CylinderGeometry(0.014, 0.012, 0.055, 8);
-      muzzle.rotateX(Math.PI * 0.5);
-      g.add(this.part(muzzle, this.matClayLight, 0, 0.016, -0.64));
-    }
-
-    this.addOptic(g, 0.044, -0.07);
-    this.addHands(g, 0, -0.032, 0.026, true, -0.28);
-    return g;
-  }
-
-  private buildOperator(): THREE.Group {
-    const g = new THREE.Group();
-    const chassis = this.extrudeSideProfile(
-      [
-        [-0.09, -0.024],
-        [0.44, -0.010],
-        [0.43, 0.036],
-        [-0.08, 0.042],
-      ],
-      0.042,
-      0.004
-    );
-    g.add(this.part(chassis, this.matClayMid, 0, 0, 0));
-
-    const barrel = new THREE.CylinderGeometry(0.012, 0.014, 0.48, 8);
-    barrel.rotateX(Math.PI * 0.5);
-    g.add(this.part(barrel, this.matClayDark, 0, 0.022, -0.62));
-    g.add(this.part(new THREE.BoxGeometry(0.040, 0.028, 0.068), this.matClayLight, 0, 0.022, -0.86));
-
-    // Scope tube + rings + objective bell + lens
-    const scopeTube = new THREE.CylinderGeometry(0.016, 0.016, 0.24, 10);
-    scopeTube.rotateX(Math.PI * 0.5);
-    g.add(this.part(scopeTube, this.matClayDark, 0, 0.068, -0.13));
-    const scopeBell = new THREE.CylinderGeometry(0.024, 0.016, 0.058, 10);
-    scopeBell.rotateX(Math.PI * 0.5);
-    g.add(this.part(scopeBell, this.matClayLight, 0, 0.068, -0.265));
-    const lens = new THREE.CylinderGeometry(0.018, 0.018, 0.008, 10);
-    lens.rotateX(Math.PI * 0.5);
-    g.add(this.part(lens, this.matLens, 0, 0.068, -0.012));
-
-    const mag = this.extrudeSideProfile(
-      [
-        [0.12, -0.088],
-        [0.19, -0.086],
-        [0.18, -0.015],
-        [0.11, -0.015],
-      ],
-      0.028,
-      0.002
-    );
-    g.add(this.part(mag, this.matClayDark, 0, 0, 0));
-
-    const grip = this.extrudeSideProfile(
-      [
-        [-0.055, -0.090],
-        [-0.022, -0.092],
-        [0.002, -0.018],
-        [-0.030, -0.018],
-      ],
-      0.024,
-      0.002
-    );
-    g.add(this.part(grip, this.matGrip, 0, 0, 0));
-
-    this.addHands(g, 0, -0.032, 0.026, true, -0.30);
     return g;
   }
 
@@ -590,14 +319,17 @@ export class ViewModelRig {
     this.weaponGroups[this.currentWeaponId].visible = false;
     this.currentWeaponId = id;
     this.weaponGroups[id].visible = true;
+    this.adsBlend = 0;
+    this.scopeBlend = 0;
   }
 
   public triggerFireKick(isKnife: boolean): void {
     if (isKnife) {
       this.swingAngle = 1.0;
     } else {
-      this.kickZ = 0.055;
-      this.kickPitch = 0.085;
+      const adsDamp = 1 - this.adsBlend * 0.6;
+      this.kickZ = 0.038 * adsDamp;
+      this.kickPitch = 0.048 * adsDamp;
     }
   }
 
@@ -614,29 +346,51 @@ export class ViewModelRig {
   }): void {
     this.setActiveWeapon(params.weaponId);
 
-    if (params.weaponId === 'OPERATOR' && params.isScoped) {
+    const cfg = WEAPON_MODEL_CONFIGS[params.weaponId];
+    const dt = params.dt;
+
+    // Smooth exponential damping for ADS optic alignment & Operator scope transition
+    const adsTarget = params.isADS ? 1 : 0;
+    const scopeTarget = params.weaponId === 'OPERATOR' && params.isScoped ? 1 : 0;
+    const adsRate = 1 - Math.exp(-dt * 18);
+    this.adsBlend += (adsTarget - this.adsBlend) * adsRate;
+    this.scopeBlend += (scopeTarget - this.scopeBlend) * (1 - Math.exp(-dt * 24));
+
+    // Once Operator scope reaches the eye, hide 3D mesh seamlessly as full-screen SVG scope takes over
+    if (params.weaponId === 'OPERATOR' && params.isScoped && this.scopeBlend > 0.65) {
       this.root.visible = false;
       return;
     }
     this.root.visible = true;
 
-    const decay = Math.min(1, params.dt * 18);
+    const decay = Math.min(1, dt * 18);
     this.kickZ += (0 - this.kickZ) * decay;
     this.kickPitch += (0 - this.kickPitch) * decay;
-    this.swingAngle += (0 - this.swingAngle) * Math.min(1, params.dt * 12);
+    this.swingAngle += (0 - this.swingAngle) * Math.min(1, dt * 12);
 
     if (params.isGrounded && params.horizSpeed > 0.35) {
-      this.walkPhase += params.horizSpeed * params.dt * 2.2;
+      this.walkPhase += params.horizSpeed * dt * 2.2;
     }
 
-    const bobX = Math.cos(this.walkPhase) * 0.006 * Math.min(1, params.horizSpeed / 5.4);
-    const bobY = Math.abs(Math.sin(this.walkPhase)) * 0.007 * Math.min(1, params.horizSpeed / 5.4);
+    // Damp walk bob heavily while aiming down sights so optic reticle stays rock-steady
+    const aimBlend = Math.max(this.adsBlend, this.scopeBlend);
+    const bobScale = (1 - aimBlend * 0.88) * Math.min(1, params.horizSpeed / 5.4);
+    const bobX = Math.cos(this.walkPhase) * 0.005 * bobScale;
+    const bobY = Math.abs(Math.sin(this.walkPhase)) * 0.006 * bobScale;
 
-    const baseX = params.isADS ? 0.048 : 0.165;
-    const baseY = params.isADS ? -0.055 : -0.095;
-    const baseZ = params.isADS ? -0.25 : -0.34;
-    const baseYaw = params.isADS ? 0.0 : 0.055;
-    const baseRoll = params.isADS ? 0.0 : -0.012;
+    // Exact mathematical optic alignment:
+    // Hipfire -> (hipX, hipY, hipZ); ADS -> (0, -opticY, adsZ) so optic window center sits dead on camera (0, 0)
+    const targetAimX = -cfg.opticPos[0];
+    const targetAimY = -cfg.opticPos[1];
+    const targetAimZ = cfg.adsZ;
+
+    const baseX = cfg.hipPos[0] + (targetAimX - cfg.hipPos[0]) * aimBlend;
+    const baseY = cfg.hipPos[1] + (targetAimY - cfg.hipPos[1]) * aimBlend;
+    const baseZ = cfg.hipPos[2] + (targetAimZ - cfg.hipPos[2]) * aimBlend;
+
+    const basePitch = cfg.hipRot[0] * (1 - aimBlend);
+    const baseYaw = cfg.hipRot[1] * (1 - aimBlend);
+    const baseRoll = cfg.hipRot[2] * (1 - aimBlend);
 
     const equipDip = params.equipRatio * -0.14;
     const reloadDip = Math.sin(params.reloadRatio * Math.PI) * -0.12;
@@ -648,25 +402,25 @@ export class ViewModelRig {
     );
 
     this.root.rotation.set(
-      this.kickPitch - params.equipRatio * 0.55 - this.swingAngle * 0.35,
+      basePitch + this.kickPitch - params.equipRatio * 0.52 - this.swingAngle * 0.35,
       baseYaw + this.swingAngle * 0.55,
-      baseRoll + params.rollTiltRad + this.swingAngle * 0.45
+      baseRoll + params.rollTiltRad * (1 - aimBlend * 0.7) + this.swingAngle * 0.45
     );
   }
 
   public dispose(): void {
-    for (const tex of this.matcapTextures) tex.dispose();
-    this.matClayDark.dispose();
-    this.matClayMid.dispose();
-    this.matClayLight.dispose();
-    this.matGrip.dispose();
-    this.matGlove.dispose();
-    this.matSleeve.dispose();
-    this.matAccentTeal.dispose();
-    this.matLens.dispose();
+    this.disposed = true;
+    this.outlineMat.dispose();
+    this.opticFrameMat.dispose();
+    this.opticGlassMat.dispose();
+    this.opticReticleMat.dispose();
+    for (const m of this.createdMaterials) m.dispose();
+    this.createdMaterials.length = 0;
+
     this.root.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) {
-        (obj as THREE.Mesh).geometry.dispose();
+      const mesh = obj as THREE.Mesh;
+      if ((mesh.isMesh || (obj as THREE.LineSegments).isLineSegments) && mesh.geometry) {
+        mesh.geometry.dispose();
       }
     });
   }
