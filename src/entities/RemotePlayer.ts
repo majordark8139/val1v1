@@ -85,8 +85,10 @@ export class RemotePlayer {
   private deathFallTimer = 0;
   private isToppling = false;
 
-  // Footstep tracking
+  // Footstep & stride animation tracking
   private lastStepCounter = 0;
+  private stridePhase = 0;
+  private strideAmp = 0;
 
   // Offline Bot AI state
   public isBot = false;
@@ -131,6 +133,8 @@ export class RemotePlayer {
     this.snapshots.fill(null);
     this.snapCount = 0;
     this.lastStepCounter = 0;
+    this.stridePhase = 0;
+    this.strideAmp = 0;
 
     if (this.rig.group) {
       this.rig.group.visible = true;
@@ -297,9 +301,14 @@ export class RemotePlayer {
       this.state.crouchAlpha = latest.crouchAlpha;
     }
 
+    const horizSpeed = Math.sqrt(this.state.vx * this.state.vx + this.state.vz * this.state.vz);
+    const targetAmp = this.state.isGrounded ? Math.min(1, horizSpeed / 4.8) : 0;
+    this.strideAmp += (targetAmp - this.strideAmp) * Math.min(1, dt * 12);
+    if (horizSpeed > 0.25 && this.state.isGrounded) {
+      this.stridePhase += horizSpeed * dt * 2.1;
+    }
     this.syncRigVisuals(true);
 
-    const horizSpeed = Math.sqrt(this.state.vx * this.state.vx + this.state.vz * this.state.vz);
     const deadzone = WEAPON_DATA[this.weaponId].moveSpeed * PHYSICS.DEADZONE_RATIO;
     if (this.state.isGrounded && horizSpeed > deadzone && this.state.crouchAlpha < 0.3) {
       this.state.stepDistance += horizSpeed * dt;
@@ -476,6 +485,12 @@ export class RemotePlayer {
     };
 
     stepKinematics(this.state, input, WEAPON_DATA[this.weaponId], false, world, dt);
+    const botSpeed = Math.sqrt(this.state.vx * this.state.vx + this.state.vz * this.state.vz);
+    const targetBotAmp = this.state.isGrounded ? Math.min(1, botSpeed / 4.8) : 0;
+    this.strideAmp += (targetBotAmp - this.strideAmp) * Math.min(1, dt * 12);
+    if (botSpeed > 0.25 && this.state.isGrounded) {
+      this.stridePhase += botSpeed * dt * 2.1;
+    }
     this.syncRigVisuals(true);
 
     const stepIdx = Math.floor(this.state.stepDistance / 1.85);
@@ -496,6 +511,8 @@ export class RemotePlayer {
       yaw: this.state.yaw,
       pitch: this.state.pitch,
       crouchAlpha: this.state.crouchAlpha,
+      stridePhase: this.stridePhase,
+      strideAmp: this.strideAmp,
     };
   }
 

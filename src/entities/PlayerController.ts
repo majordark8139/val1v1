@@ -255,7 +255,13 @@ export class PlayerController {
     computeShotRayDirection(this.state.yaw, this.state.pitch, recOut, spread, outDir, isADS);
   }
 
-  public updateCamera(camera: THREE.PerspectiveCamera, alpha: number, frameTime: number): void {
+  public updateCamera(
+    camera: THREE.PerspectiveCamera,
+    alpha: number,
+    frameTime: number,
+    liveYaw?: number,
+    livePitch?: number
+  ): void {
     // Decay reconciliation offset smoothly (~50ms)
     const decay = Math.exp(-frameTime * 45);
     this.smoothCamOffset.multiplyScalar(decay);
@@ -279,9 +285,12 @@ export class PlayerController {
     const shakePitch = shakeMag > 0 ? (Math.random() - 0.5) * shakeMag : 0;
     const shakeRoll = shakeMag > 0 ? (Math.random() - 0.5) * shakeMag : 0;
 
+    const yaw = liveYaw !== undefined ? liveYaw : this.state.yaw;
+    const pitch = livePitch !== undefined ? livePitch : this.state.pitch;
+
     camera.rotation.set(
-      this.state.pitch + recOut.cameraPitchOffsetRad + shakePitch,
-      this.state.yaw + recOut.cameraYawOffsetRad,
+      pitch + recOut.cameraPitchOffsetRad + shakePitch,
+      yaw + recOut.cameraYawOffsetRad,
       shakeRoll,
       'YXZ'
     );

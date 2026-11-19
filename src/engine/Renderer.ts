@@ -26,6 +26,7 @@ export interface TacticalRendererContext {
   camera: THREE.PerspectiveCamera;
   isSoftwareGl: boolean;
   maxAnisotropy: number;
+  prewarm: () => void;
   resize: (width: number, height: number) => void;
   renderFrame: () => void;
   dispose: () => void;
@@ -37,11 +38,11 @@ function createClaySkyDomeTexture(): THREE.CanvasTexture {
   canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
   const grad = ctx.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0.0, '#96a0ae'); // Neutral cool Blender viewport zenith
-  grad.addColorStop(0.42, '#c0c7d1'); // Soft studio mid-sky
-  grad.addColorStop(0.56, '#dce0e6'); // Clean horizon
-  grad.addColorStop(0.72, '#c4c9d0'); // Lower atmospheric bounce
-  grad.addColorStop(1.0, '#90969e');
+  grad.addColorStop(0.0, '#8d97a6'); // Blender viewport neutral zenith
+  grad.addColorStop(0.42, '#b9c0cb'); // Soft studio mid-sky
+  grad.addColorStop(0.55, '#d3d8e0'); // Clean horizon
+  grad.addColorStop(0.72, '#bec4cc'); // Lower atmospheric bounce
+  grad.addColorStop(1.0, '#8b919a');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 4, 128);
   const tex = new THREE.CanvasTexture(canvas);
@@ -67,10 +68,9 @@ export function createTacticalRenderer(
   });
 
   renderer.outputEncoding = THREE.sRGBEncoding;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
-  // Cap DPR at 1.25 to preserve locked 60+ FPS across high-DPI displays
-  renderer.setPixelRatio(isSoftwareGl ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.25));
+  renderer.toneMapping = THREE.NoToneMapping;
+  // Lock 1:1 native CSS pixel ratio for smooth vsync pacing without fractional scaling stutter
+  renderer.setPixelRatio(1.0);
   renderer.shadowMap.enabled = false;
   renderer.autoClear = false;
 
@@ -79,10 +79,10 @@ export function createTacticalRenderer(
   renderer.setSize(width, height, false);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xd2d7de).convertSRGBToLinear();
-  scene.fog = new THREE.Fog(0xd8dde4, 65, 165);
+  scene.background = new THREE.Color(0xcbd1da);
+  scene.fog = new THREE.Fog(0xd0d5dd, 68, 170);
 
-  // Lightweight Neutral Blender Studio Sky Dome
+  // Lightweight Neutral Blender Viewport Studio Sky Dome
   const skyTex = createClaySkyDomeTexture();
   const skyGeo = new THREE.SphereGeometry(190, 16, 12);
   const skyMat = new THREE.MeshBasicMaterial({
@@ -93,28 +93,6 @@ export function createTacticalRenderer(
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
   scene.add(sky);
-
-  // Clean 3-Point Blender Clay / Workbench Studio Lighting (zero shadow-map pass overhead)
-  const hemiLight = new THREE.HemisphereLight(
-    new THREE.Color(0xf5f7fa).convertSRGBToLinear(),
-    new THREE.Color(0x525862).convertSRGBToLinear(),
-    0.85
-  );
-  scene.add(hemiLight);
-
-  const keyLight = new THREE.DirectionalLight(
-    new THREE.Color(0xfffaf0).convertSRGBToLinear(),
-    0.88
-  );
-  keyLight.position.set(42, 68, 30);
-  scene.add(keyLight);
-
-  const rimLight = new THREE.DirectionalLight(
-    new THREE.Color(0xc2d2e8).convertSRGBToLinear(),
-    0.34
-  );
-  rimLight.position.set(-40, 28, -44);
-  scene.add(rimLight);
 
   const camera = new THREE.PerspectiveCamera(
     CAMERA_CONFIG.DEFAULT_VFOV,
@@ -145,6 +123,11 @@ export function createTacticalRenderer(
     camera,
     isSoftwareGl,
     maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
+    prewarm: () => {
+      if (!isSoftwareGl) {
+        renderer.compile(scene, camera);
+      }
+    },
     resize: (w: number, h: number) => {
       const safeW = Math.max(1, w);
       const safeH = Math.max(1, h);

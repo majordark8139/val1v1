@@ -8,6 +8,7 @@ interface Props {
   onToggleMute: () => void;
   onOpenSettings: () => void;
   onOpenBuyMenu: () => void;
+  onSkipBuyPhase: () => void;
 }
 
 function formatTimer(sec: number): string {
@@ -17,12 +18,13 @@ function formatTimer(sec: number): string {
   return `${mins}:${rem < 10 ? '0' : ''}${rem}`;
 }
 
-export const HUDManager: React.FC<Props> = ({
+export const HUDManager: React.FC<Props> = React.memo(({
   hud,
   muted,
   onToggleMute,
   onOpenSettings,
   onOpenBuyMenu,
+  onSkipBuyPhase,
 }) => {
   if (hud.appState !== 'playing') return null;
 
@@ -166,17 +168,32 @@ export const HUDManager: React.FC<Props> = ({
       {/* TOP-CENTER SUB-BANNERS (Keep center crosshair sightline 100% clear) */}
       <div className="flex flex-col items-center gap-2 mt-3 mb-auto pointer-events-none">
         {hud.phase === 'BUY' && !hud.buyMenuOpen && (
-          <button
-            type="button"
-            tabIndex={-1}
-            onClick={(e) => {
-              e.currentTarget.blur();
-              onOpenBuyMenu();
-            }}
-            className="pointer-events-auto bg-[#0d1118]/90 border border-[#00f5d4]/60 px-4 py-1.5 text-xs font-semibold tracking-[0.15em] text-[#00f5d4] hover:bg-[#0d1118] transition-colors"
-          >
-            BUY PHASE · PRESS [B] TO OPEN ARSENAL
-          </button>
+          <div className="flex items-center gap-2 pointer-events-auto">
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onOpenBuyMenu();
+              }}
+              className="bg-[#0d1118]/90 border border-[#00f5d4]/60 px-4 py-1.5 text-xs font-semibold tracking-[0.15em] text-[#00f5d4] hover:bg-[#0d1118] transition-colors cursor-pointer"
+            >
+              BUY PHASE · PRESS [B] TO OPEN ARSENAL
+            </button>
+            {hud.mode === 'BOT' && (
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  onSkipBuyPhase();
+                }}
+                className="bg-[#00f5d4] text-[#090d14] px-3.5 py-1.5 text-xs font-bold tracking-[0.14em] uppercase hover:bg-[#33f7dd] transition-colors cursor-pointer"
+              >
+                Start Round [F]
+              </button>
+            )}
+          </div>
         )}
 
         {!hud.pointerLocked && !hud.buyMenuOpen && hud.phase !== 'BUY' && (
@@ -280,4 +297,4 @@ export const HUDManager: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

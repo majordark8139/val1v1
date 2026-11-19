@@ -133,7 +133,7 @@ function appendBoxToBucket(
 
 /**
  * Sculpted low-poly Radianite crate with recessed core, perimeter frame rails,
- * diagonal structural brace, and raised central Kingdom diamond relief.
+ * horizontal waist strap, corner armor bumpers, and raised Kingdom diamond relief.
  */
 function appendTacticalCrate(
   bodyBucket: GeometryBucket,
@@ -153,38 +153,130 @@ function appendTacticalCrate(
   ];
 
   // Recessed inner crate body
-  appendBoxToBucket(bodyBucket, Math.max(0.2, w - 0.08), Math.max(0.2, h - 0.06), Math.max(0.2, d - 0.08), px, py, pz, 0, ry, 0, false);
+  appendBoxToBucket(
+    bodyBucket,
+    Math.max(0.2, w - 0.10),
+    Math.max(0.2, h - 0.08),
+    Math.max(0.2, d - 0.10),
+    px,
+    py,
+    pz,
+    0,
+    ry,
+    0,
+    false
+  );
 
-  // Top & bottom chamfered armor collars
-  const railH = Math.min(0.11, h * 0.14);
-  appendBoxToBucket(frameBucket, w + 0.02, railH, d + 0.02, px, py + h * 0.5 - railH * 0.5, pz, 0, ry, 0, false);
-  appendBoxToBucket(frameBucket, w + 0.02, railH, d + 0.02, px, py - h * 0.5 + railH * 0.5, pz, 0, ry, 0, false);
+  // Top & bottom chamfered armor collars + top lid recessed plate
+  const railH = Math.min(0.12, h * 0.14);
+  appendBoxToBucket(
+    frameBucket,
+    w + 0.02,
+    railH,
+    d + 0.02,
+    px,
+    py + h * 0.5 - railH * 0.5,
+    pz,
+    0,
+    ry,
+    0,
+    false
+  );
+  appendBoxToBucket(
+    trimBucket,
+    Math.max(0.2, w - 0.28),
+    0.04,
+    Math.max(0.2, d - 0.28),
+    px,
+    py + h * 0.5 + 0.015,
+    pz,
+    0,
+    ry,
+    0,
+    false
+  );
+  appendBoxToBucket(
+    frameBucket,
+    w + 0.02,
+    railH,
+    d + 0.02,
+    px,
+    py - h * 0.5 + railH * 0.5,
+    pz,
+    0,
+    ry,
+    0,
+    false
+  );
 
-  // 4 Vertical corner posts
-  const postT = Math.min(0.12, Math.min(w, d) * 0.12);
+  // 4 Vertical corner armor posts
+  const postT = Math.min(0.14, Math.min(w, d) * 0.12);
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      const [cx, cy, cz] = toWorld(sx * (w * 0.5 - postT * 0.45), 0, sz * (d * 0.5 - postT * 0.45));
+      const [cx, cy, cz] = toWorld(
+        sx * (w * 0.5 - postT * 0.45),
+        0,
+        sz * (d * 0.5 - postT * 0.45)
+      );
       appendBoxToBucket(frameBucket, postT, h - railH * 1.4, postT, cx, cy, cz, 0, ry, 0, false);
     }
   }
 
-  // Front/Back & Side raised diamond reliefs + horizontal rib
+  // Mid structural strap + Front/Back & Side raised diamond reliefs
   if (h >= 0.85) {
+    appendBoxToBucket(
+      frameBucket,
+      w - 0.02,
+      0.07,
+      d - 0.02,
+      px,
+      py,
+      pz,
+      0,
+      ry,
+      0,
+      false
+    );
+    const diamondSize = Math.min(0.30, Math.min(w, h) * 0.24);
     for (const sz of [-1, 1]) {
-      const [dx, dy, dz] = toWorld(0, 0, sz * (d * 0.5 - 0.01));
-      appendBoxToBucket(trimBucket, Math.min(0.32, w * 0.25), Math.min(0.32, h * 0.25), 0.04, dx, dy, dz, 0, ry, Math.PI * 0.25, false);
+      const [dx, dy, dz] = toWorld(0, 0, sz * (d * 0.5 - 0.015));
+      appendBoxToBucket(
+        trimBucket,
+        diamondSize,
+        diamondSize,
+        0.05,
+        dx,
+        dy,
+        dz,
+        0,
+        ry,
+        Math.PI * 0.25,
+        false
+      );
     }
     for (const sx of [-1, 1]) {
-      const [dx, dy, dz] = toWorld(sx * (w * 0.5 - 0.01), 0, 0);
-      appendBoxToBucket(trimBucket, 0.04, Math.min(0.32, h * 0.25), Math.min(0.32, d * 0.25), dx, dy, dz, Math.PI * 0.25, ry, 0, false);
+      const [dx, dy, dz] = toWorld(sx * (w * 0.5 - 0.015), 0, 0);
+      appendBoxToBucket(
+        trimBucket,
+        0.05,
+        diamondSize,
+        diamondSize,
+        dx,
+        dy,
+        dz,
+        Math.PI * 0.25,
+        ry,
+        0,
+        false
+      );
     }
   }
 }
 
 /**
- * Builds true arched spandrel corners inside a rectangular doorway opening
- * plus matching pilasters, arch ring, and keystone so portals form real curves.
+ * Builds clean, continuous Venetian stone arch portals using a single smooth
+ * extruded spandrel + continuous extruded arch molding ring (zero jagged ceiling boxes)
+ * + sculpted pilasters, capitals, and central keystone.
  */
 function appendArchPortal(
   wallBucket: GeometryBucket,
@@ -198,10 +290,11 @@ function appendArchPortal(
   rotY = 0
 ): void {
   const halfSpan = spanWidth * 0.5;
-  const springY = openingHeight - Math.min(0.75, halfSpan * 0.26);
+  const springY = openingHeight - Math.min(0.72, halfSpan * 0.25);
   const archRise = openingHeight - springY;
-  const pillarW = 0.34;
-  const pillarD = depth + 0.18;
+  const pillarW = 0.36;
+  const pillarD = depth + 0.16;
+  const curveSteps = 14;
 
   const cosY = Math.cos(rotY);
   const sinY = Math.sin(rotY);
@@ -211,66 +304,110 @@ function appendArchPortal(
     cz - lx * sinY + lz * cosY,
   ];
 
-  // Extruded spandrel corners filling the rectangular top corners down to the arch curve
+  // 1. Extruded spandrel corners filling rectangular lintel corners cleanly down to arch curve
   const spandrelShape = new THREE.Shape();
   spandrelShape.moveTo(-halfSpan, springY);
-  spandrelShape.lineTo(-halfSpan, openingHeight + 0.02);
-  spandrelShape.lineTo(halfSpan, openingHeight + 0.02);
+  spandrelShape.lineTo(-halfSpan, openingHeight + 0.04);
+  spandrelShape.lineTo(halfSpan, openingHeight + 0.04);
   spandrelShape.lineTo(halfSpan, springY);
-  const steps = 16;
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const ang = t * Math.PI;
-    const x = Math.cos(ang) * halfSpan;
-    const y = springY + Math.sin(ang) * archRise;
-    spandrelShape.lineTo(x, y);
+  for (let i = 0; i <= curveSteps; i++) {
+    const ang = (i / curveSteps) * Math.PI;
+    spandrelShape.lineTo(Math.cos(ang) * halfSpan, springY + Math.sin(ang) * archRise);
   }
   spandrelShape.closePath();
 
   const spandrelGeo = new THREE.ExtrudeGeometry(spandrelShape, {
     depth,
     bevelEnabled: false,
-    curveSegments: 16,
+    curveSegments: curveSteps,
   });
   spandrelGeo.translate(0, 0, -depth * 0.5);
   appendGeometryToBucket(wallBucket, spandrelGeo, cx, baseY, cz, 0, rotY, 0, 0.5, 0.5);
 
-  // Left & Right Stone Pilasters + Capitals ending cleanly at springY
+  // 2. Single continuous extruded arch molding ring (smooth soffit underneath, zero gaps)
+  const ringThick = 0.22;
+  const ringShape = new THREE.Shape();
+  for (let i = 0; i <= curveSteps; i++) {
+    const ang = (i / curveSteps) * Math.PI;
+    const ox = Math.cos(ang) * (halfSpan + ringThick);
+    const oy = springY + Math.sin(ang) * (archRise + ringThick);
+    if (i === 0) ringShape.moveTo(ox, oy);
+    else ringShape.lineTo(ox, oy);
+  }
+  for (let i = curveSteps; i >= 0; i--) {
+    const ang = (i / curveSteps) * Math.PI;
+    const ix = Math.cos(ang) * (halfSpan - 0.02);
+    const iy = springY + Math.sin(ang) * (archRise - 0.02);
+    ringShape.lineTo(ix, iy);
+  }
+  ringShape.closePath();
+
+  const ringGeo = new THREE.ExtrudeGeometry(ringShape, {
+    depth: pillarD,
+    bevelEnabled: false,
+    curveSegments: curveSteps,
+  });
+  ringGeo.translate(0, 0, -pillarD * 0.5);
+  appendGeometryToBucket(stoneBucket, ringGeo, cx, baseY, cz, 0, rotY, 0, 0.5, 0.5);
+
+  // 3. Sculpted central trapezoidal keystone + Left/Right pilasters with plinths & capitals
+  const [keyX, keyY, keyZ] = toWorld(0, openingHeight + 0.12, 0);
+  appendBoxToBucket(stoneBucket, 0.34, 0.36, pillarD + 0.10, keyX, keyY, keyZ, 0, rotY, 0, false);
+
   for (const side of [-1, 1]) {
-    const px = side * (halfSpan + pillarW * 0.35);
+    const px = side * (halfSpan + pillarW * 0.36);
     const [wx, wy, wz] = toWorld(px, springY * 0.5, 0);
     appendBoxToBucket(stoneBucket, pillarW, springY, pillarD, wx, wy, wz, 0, rotY, 0, false);
 
-    const [kx, ky, kz] = toWorld(px, springY + 0.08, 0);
-    appendBoxToBucket(stoneBucket, pillarW + 0.14, 0.16, pillarD + 0.10, kx, ky, kz, 0, rotY, 0, false);
-  }
+    // Base plinth
+    const [bx, by, bz] = toWorld(px, 0.18, 0);
+    appendBoxToBucket(stoneBucket, pillarW + 0.12, 0.36, pillarD + 0.10, bx, by, bz, 0, rotY, 0, false);
 
-  // Smooth sculpted arch trim ring hugging the exact arch curve + central keystone
-  const segments = 16;
-  const rx = halfSpan + 0.10;
-  const ry = archRise + 0.10;
-  for (let i = 0; i < segments; i++) {
-    const t = (i + 0.5) / segments;
-    const ang = t * Math.PI;
-    const vx = Math.cos(ang) * rx;
-    const vy = springY + Math.sin(ang) * ry;
-    const isKeystone = i === Math.floor(segments / 2) || i === Math.floor(segments / 2) - 1;
-    const [wx, wy, wz] = toWorld(vx, vy, 0);
-    const tangentAngle = Math.atan2(ry * Math.cos(ang), -rx * Math.sin(ang));
-    appendBoxToBucket(
-      stoneBucket,
-      (spanWidth / segments) * 1.38,
-      isKeystone ? 0.28 : 0.22,
-      pillarD + (isKeystone ? 0.10 : 0.04),
-      wx,
-      wy,
-      wz,
-      0,
-      rotY,
-      tangentAngle,
-      false
-    );
+    // Impost capital
+    const [kx, ky, kz] = toWorld(px, springY + 0.07, 0);
+    appendBoxToBucket(stoneBucket, pillarW + 0.16, 0.18, pillarD + 0.12, kx, ky, kz, 0, rotY, 0, false);
   }
+}
+
+/**
+ * Adds a sculpted Venetian recessed window with sill, top pediment cornice,
+ * dark interior recess, and louvered side shutters.
+ */
+function appendVenetianWindow(
+  woodBucket: GeometryBucket,
+  stoneBucket: GeometryBucket,
+  wx: number,
+  wy: number,
+  wz: number,
+  facingSignX: -1 | 1
+): void {
+  const n = facingSignX;
+  // Dark recessed window pane
+  appendBoxToBucket(woodBucket, 0.10, 1.48, 0.96, wx + n * 0.04, wy, wz, 0, 0, 0, false);
+  // Central mullion crossbars
+  appendBoxToBucket(stoneBucket, 0.14, 1.48, 0.08, wx + n * 0.06, wy, wz, 0, 0, 0, false);
+  appendBoxToBucket(stoneBucket, 0.14, 0.08, 0.96, wx + n * 0.06, wy + 0.14, wz, 0, 0, 0, false);
+  // Angled side shutters
+  appendBoxToBucket(woodBucket, 0.10, 1.48, 0.34, wx + n * 0.09, wy, wz - 0.66, 0, n * 0.18, 0, false);
+  appendBoxToBucket(woodBucket, 0.10, 1.48, 0.34, wx + n * 0.09, wy, wz + 0.66, 0, -n * 0.18, 0, false);
+  // Stone sill + corbel brackets + top cornice lintel
+  appendBoxToBucket(stoneBucket, 0.28, 0.14, 1.46, wx + n * 0.10, wy - 0.80, wz, 0, 0, 0, false);
+  appendBoxToBucket(stoneBucket, 0.24, 0.16, 0.16, wx + n * 0.08, wy - 0.94, wz - 0.46, 0, 0, 0, false);
+  appendBoxToBucket(stoneBucket, 0.24, 0.16, 0.16, wx + n * 0.08, wy - 0.94, wz + 0.46, 0, 0, 0, false);
+  appendBoxToBucket(stoneBucket, 0.30, 0.16, 1.56, wx + n * 0.11, wy + 0.82, wz, 0, 0, 0, false);
+}
+
+/**
+ * Appends crease line segments from a finalized BufferGeometry into a flat
+ * vertex array so all Blender Workbench cavity lines render in 1 single draw call.
+ */
+function appendEdgesToArray(geo: THREE.BufferGeometry, outPositions: number[], thresholdDeg = 28): void {
+  const edges = new THREE.EdgesGeometry(geo, thresholdDeg);
+  const pos = edges.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    outPositions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+  }
+  edges.dispose();
 }
 
 function finalizeBucketGeometry(bucket: GeometryBucket): THREE.BufferGeometry {
@@ -324,13 +461,14 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
     const [px, py, pz] = brush.pos;
     appendBoxToBucket(buckets[brush.mat], w, h, d, px, py, pz, 0, brush.rotY, 0, true, 2.0);
 
-    // Chamfered stone base plinth & top cornice along primary walls
+    // Chamfered architectural stone base plinth, mid string-course & top cornice along primary walls
     if (brush.mat === 'MAT_WALL_ARCHITECTURAL' && brush.collidable && h >= 4.0) {
       const topY = py + h * 0.5;
       const botY = py - h * 0.5;
       if (w >= 3.0 || d >= 3.0) {
-        appendBoxToBucket(stoneBucket, w + 0.18, 0.24, d + 0.18, px, topY + 0.08, pz, 0, brush.rotY, 0, false);
-        appendBoxToBucket(stoneBucket, w + 0.12, 0.28, d + 0.12, px, botY + 0.14, pz, 0, brush.rotY, 0, false);
+        appendBoxToBucket(stoneBucket, w + 0.22, 0.26, d + 0.22, px, topY + 0.08, pz, 0, brush.rotY, 0, false);
+        appendBoxToBucket(stoneBucket, w + 0.10, 0.12, d + 0.10, px, botY + 3.05, pz, 0, brush.rotY, 0, false);
+        appendBoxToBucket(stoneBucket, w + 0.14, 0.30, d + 0.14, px, botY + 0.15, pz, 0, brush.rotY, 0, false);
       }
     }
   }
@@ -338,60 +476,78 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
   // 2. Surrounding Ground Apron
   appendBoxToBucket(buckets.MAT_FLOOR_COURTYARD, 160, 0.4, 160, 0, -0.75, 0, 0, 0, 0, true, 2.2);
 
-  // 3. True Curved Arch Portals (Top Mid Arch, Bottom Mid Arch, Market Entrance)
+  // 3. True Smooth Venetian Arch Portals (Top Mid Arch, Bottom Mid Arch, Market Entrance)
   appendArchPortal(buckets.MAT_WALL_ARCHITECTURAL, stoneBucket, 0, 1.35, -24.0, 6.0, 2.55, 1.2, 0);
   appendArchPortal(buckets.MAT_WALL_ARCHITECTURAL, stoneBucket, 0, 0.0, 27.0, 5.0, 3.4, 1.2, 0);
   appendArchPortal(buckets.MAT_WALL_ARCHITECTURAL, stoneBucket, 10.5, 0.3, 6.0, 3.4, 3.5, 1.0, Math.PI * 0.5);
 
-  // 4. Pitched Roof Eaves & Overhangs
-  appendBoxToBucket(roofBucket, 2.2, 0.34, 15.0, 10.7, 6.22, -2.5, 0, 0, -0.32, false);
-  appendBoxToBucket(roofBucket, 11.8, 0.48, 13.4, 16.5, 6.28, 6.0, 0.22, 0, 0, false);
-  appendBoxToBucket(roofBucket, 2.2, 0.34, 29.0, -11.5, 6.72, -6.5, 0, 0, 0.32, false);
-  appendBoxToBucket(roofBucket, 16.4, 0.46, 2.3, 0, 6.68, -24.0, 0.26, 0, 0, false);
-  appendBoxToBucket(roofBucket, 14.5, 0.46, 2.3, 0, 6.22, 27.0, -0.26, 0, 0, false);
-  appendBoxToBucket(roofBucket, 6.6, 0.42, 4.4, 7.5, 6.22, 13.0, -0.26, 0, 0, false);
+  // 4. Stepped Venetian Pitched Roof Eaves & Ridge Caps
+  appendBoxToBucket(roofBucket, 2.4, 0.30, 15.0, 10.7, 6.26, -2.5, 0, 0, -0.32, false);
+  appendBoxToBucket(roofBucket, 11.8, 0.46, 13.4, 16.5, 6.32, 6.0, 0.22, 0, 0, false);
+  appendBoxToBucket(roofBucket, 2.4, 0.30, 29.0, -11.5, 6.76, -6.5, 0, 0, 0.32, false);
+  appendBoxToBucket(roofBucket, 16.4, 0.44, 2.4, 0, 6.72, -24.0, 0.26, 0, 0, false);
+  appendBoxToBucket(roofBucket, 14.5, 0.44, 2.4, 0, 6.26, 27.0, -0.26, 0, 0, false);
+  appendBoxToBucket(roofBucket, 6.6, 0.40, 4.4, 7.5, 6.26, 13.0, -0.26, 0, 0, false);
 
-  // 5. Timber Pergola Beams & Recessed Window Frames
-  for (let z = -10; z <= 2; z += 3.0) {
-    appendBoxToBucket(woodBucket, 2.8, 0.16, 0.18, 9.2, 5.15, z);
-  }
-  appendBoxToBucket(woodBucket, 0.2, 0.2, 13.0, 8.0, 5.05, -4.0);
-
-  const windowZList = [-6.5, -0.5, 16.5];
-  for (const wz of windowZList) {
-    appendBoxToBucket(woodBucket, 0.14, 1.5, 1.0, 9.95, 4.3, wz);
-    appendBoxToBucket(woodBucket, 0.16, 1.5, 0.28, 9.93, 4.3, wz - 0.65);
-    appendBoxToBucket(woodBucket, 0.16, 1.5, 0.28, 9.93, 4.3, wz + 0.65);
-    appendBoxToBucket(stoneBucket, 0.26, 0.16, 1.55, 9.92, 3.48, wz);
-    appendBoxToBucket(stoneBucket, 0.26, 0.16, 1.55, 9.92, 5.12, wz);
+  // Market Entrance Sloped Canopy Awning + Brackets (flush against east wall X=10.0)
+  appendBoxToBucket(roofBucket, 1.35, 0.14, 4.1, 9.40, 4.18, 6.0, 0, 0, 0.22, false);
+  appendBoxToBucket(woodBucket, 0.12, 0.14, 4.16, 8.78, 4.02, 6.0, 0, 0, 0, false);
+  for (const az of [4.35, 7.65]) {
+    appendBoxToBucket(woodBucket, 1.05, 0.10, 0.10, 9.52, 3.74, az, 0, 0, -0.45, false);
   }
 
-  // 6. Catwalk Iron Handrail Stanchions & Top Rail
-  for (let z = -7.5; z <= 5.5; z += 2.6) {
-    appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.08, 0.35, 0.08, -7.55, 2.42, z);
+  // 5. Timber Pergola Rafters (supported by angled corbels flush against East wall X=10.0) + Venetian Windows
+  for (let z = -10; z <= 2; z += 2.4) {
+    appendBoxToBucket(woodBucket, 1.45, 0.14, 0.14, 9.35, 5.20, z, 0, 0, 0, false);
+    appendBoxToBucket(woodBucket, 0.95, 0.11, 0.11, 9.60, 4.82, z, 0, 0, -0.55, false);
   }
-  appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.09, 0.07, 13.6, -7.55, 2.60, -1.0);
+  appendBoxToBucket(woodBucket, 0.16, 0.16, 13.0, 8.70, 5.08, -4.0, 0, 0, 0, false);
 
-  // 7. Planter Boxes & Stylized Low-Poly Cypress Foliage
-  const treePositions: [number, number, number, number][] = [
-    [-10.2, 1.35, -19.5, 3.2],
-    [9.3, 0.0, -10.5, 2.8],
-    [-6.6, 0.0, 21.5, 3.0],
-    [5.8, 0.0, 22.0, 2.7],
-    [13.5, 0.3, 1.6, 2.4],
+  for (const wz of [-6.5, -0.5, 16.5]) {
+    appendVenetianWindow(woodBucket, stoneBucket, 9.96, 4.35, wz, -1);
+  }
+  for (const wz of [-10.0, -2.0, 6.0]) {
+    appendVenetianWindow(woodBucket, stoneBucket, -11.28, 4.75, wz, 1);
+  }
+
+  // 6. Catwalk Iron Handrail Stanchions, Top Rail & Mid Bar
+  for (let z = -7.5; z <= 5.5; z += 2.15) {
+    appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.08, 0.42, 0.08, -7.55, 2.46, z, 0, 0, 0, false);
+  }
+  appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.10, 0.07, 13.8, -7.55, 2.68, -1.0, 0, 0, 0, false);
+  appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.06, 0.05, 13.8, -7.55, 2.44, -1.0, 0, 0, 0, false);
+
+  // 7. Sculpted Low-Poly Stone Planters & Faceted Mediterranean Foliage Clusters (no traffic-cone trees)
+  const planterPositions: [number, number, number, number][] = [
+    [-10.2, 1.35, -19.5, 2.6],
+    [9.3, 0.0, -10.5, 2.5],
+    [-6.6, 0.0, 21.5, 2.7],
+    [5.8, 0.0, 22.0, 2.4],
+    [13.5, 0.3, 1.6, 2.2],
   ];
-  for (const [tx, ty, tz, height] of treePositions) {
-    appendBoxToBucket(stoneBucket, 0.9, 0.55, 0.9, tx, ty + 0.275, tz);
-    appendBoxToBucket(stoneBucket, 1.02, 0.12, 1.02, tx, ty + 0.56, tz);
-    const trunk = new THREE.CylinderGeometry(0.10, 0.14, height * 0.45, 6);
-    appendGeometryToBucket(woodBucket, trunk, tx, ty + 0.55 + height * 0.22, tz);
-    const c1 = new THREE.ConeGeometry(0.66, height * 0.52, 7);
-    appendGeometryToBucket(foliageBucket, c1, tx, ty + 0.82 + height * 0.45, tz);
-    const c2 = new THREE.ConeGeometry(0.48, height * 0.44, 7);
-    appendGeometryToBucket(foliageBucket, c2, tx, ty + 0.85 + height * 0.68, tz);
+  for (const [tx, ty, tz, height] of planterPositions) {
+    // Stepped stone urn planter
+    appendBoxToBucket(stoneBucket, 0.96, 0.18, 0.96, tx, ty + 0.09, tz, 0, 0, 0, false);
+    appendBoxToBucket(stoneBucket, 0.84, 0.44, 0.84, tx, ty + 0.38, tz, 0, 0, 0, false);
+    appendBoxToBucket(stoneBucket, 1.04, 0.12, 1.04, tx, ty + 0.64, tz, 0, 0, 0, false);
+    // Tapered stem + sculpted faceted icosahedron foliage crown (3 organic clusters)
+    const trunk = new THREE.CylinderGeometry(0.08, 0.11, height * 0.42, 6);
+    appendGeometryToBucket(woodBucket, trunk, tx, ty + 0.65 + height * 0.20, tz);
+
+    const b1 = new THREE.IcosahedronGeometry(0.46, 0);
+    b1.scale(0.85, 1.35, 0.85);
+    appendGeometryToBucket(foliageBucket, b1, tx, ty + 0.75 + height * 0.48, tz, 0, 0.4, 0);
+
+    const b2 = new THREE.IcosahedronGeometry(0.38, 0);
+    b2.scale(0.80, 1.40, 0.80);
+    appendGeometryToBucket(foliageBucket, b2, tx + 0.08, ty + 0.78 + height * 0.72, tz - 0.05, 0.1, 1.2, 0);
+
+    const b3 = new THREE.IcosahedronGeometry(0.24, 0);
+    b3.scale(0.85, 1.35, 0.85);
+    appendGeometryToBucket(foliageBucket, b3, tx - 0.04, ty + 0.80 + height * 0.92, tz + 0.04, 0, 2.1, 0);
   }
 
-  // 8. Wall Lantern Sconces
+  // 8. Wrought-Iron Wall Lantern Sconces with wall brackets
   const lanternPositions: [number, number, number][] = [
     [9.85, 3.3, -4.0],
     [9.85, 3.3, 2.8],
@@ -402,16 +558,33 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
     [2.6, 3.4, 26.3],
   ];
   for (const [lx, ly, lz] of lanternPositions) {
-    appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.18, 0.08, 0.18, lx, ly + 0.18, lz);
-    appendBoxToBucket(lanternBucket, 0.16, 0.24, 0.16, lx, ly, lz);
-    appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.2, 0.06, 0.2, lx, ly - 0.16, lz);
+    appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.22, 0.07, 0.22, lx, ly + 0.18, lz, 0, 0, 0, false);
+    appendBoxToBucket(lanternBucket, 0.16, 0.24, 0.16, lx, ly, lz, 0, 0, 0, false);
+    appendBoxToBucket(buckets.MAT_CATWALK_METAL, 0.20, 0.06, 0.20, lx, ly - 0.16, lz, 0, 0, 0, false);
   }
 
-  // 9. Venetian Belltower Spire & Vista Rooftops
+  // 9. Venetian Belltower Spire (with corner belfry piers) & Vista Rooftops
   appendBoxToBucket(stoneBucket, 7.6, 0.6, 7.6, -26.0, 20.3, -8.0, 0, 0.15, 0, false);
-  appendBoxToBucket(buckets.MAT_WALL_ARCHITECTURAL, 5.4, 4.2, 5.4, -26.0, 22.6, -8.0, 0, 0.15, 0, false);
-  const bellSpire = new THREE.ConeGeometry(4.4, 5.2, 4);
-  appendGeometryToBucket(roofBucket, bellSpire, -26.0, 27.3, -8.0, 0, 0.15 + Math.PI * 0.25, 0);
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      appendBoxToBucket(
+        buckets.MAT_WALL_ARCHITECTURAL,
+        1.25,
+        4.2,
+        1.25,
+        -26.0 + sx * 2.1,
+        22.6,
+        -8.0 + sz * 2.1,
+        0,
+        0.15,
+        0,
+        false
+      );
+    }
+  }
+  appendBoxToBucket(stoneBucket, 6.2, 0.55, 6.2, -26.0, 24.8, -8.0, 0, 0.15, 0, false);
+  const bellSpire = new THREE.ConeGeometry(4.4, 5.4, 4);
+  appendGeometryToBucket(roofBucket, bellSpire, -26.0, 27.7, -8.0, 0, 0.15 + Math.PI * 0.25, 0);
 
   const vistaRoof = new THREE.ConeGeometry(16.0, 6.0, 4);
   appendGeometryToBucket(roofBucket, vistaRoof, 4.0, 21.0, -52.0, 0, Math.PI * 0.25, 0);
@@ -421,26 +594,42 @@ export function buildAscentMidMap(materials: ProceduralMaterialSet): BuiltAscent
   appendGeometryToBucket(roofBucket, eastRoof, 34.0, 17.2, 4.0, 0, -0.1 + Math.PI * 0.25, 0);
 
   const geometriesToDispose: THREE.BufferGeometry[] = [];
+  const cavityEdgePositions: number[] = [];
 
-  const addStaticMesh = (bucket: GeometryBucket, mat: THREE.Material) => {
+  const addStaticMesh = (bucket: GeometryBucket, mat: THREE.Material, addCavityEdges = false) => {
     if (bucket.positions.length === 0) return;
     const geo = finalizeBucketGeometry(bucket);
     geometriesToDispose.push(geo);
+    if (addCavityEdges) {
+      appendEdgesToArray(geo, cavityEdgePositions, 28);
+    }
     const mesh = new THREE.Mesh(geo, mat);
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     group.add(mesh);
   };
 
-  addStaticMesh(buckets.MAT_FLOOR_COURTYARD, materials.MAT_FLOOR_COURTYARD);
-  addStaticMesh(buckets.MAT_WALL_ARCHITECTURAL, materials.MAT_WALL_ARCHITECTURAL);
-  addStaticMesh(buckets.MAT_COVER_TACTICAL, materials.MAT_COVER_TACTICAL);
-  addStaticMesh(buckets.MAT_CATWALK_METAL, materials.MAT_CATWALK_METAL);
-  addStaticMesh(roofBucket, materials.MAT_TERRACOTTA_ROOF);
-  addStaticMesh(woodBucket, materials.MAT_WOOD_TRIM);
-  addStaticMesh(stoneBucket, materials.MAT_STONE_TRIM);
-  addStaticMesh(foliageBucket, materials.MAT_FOLIAGE);
-  addStaticMesh(lanternBucket, materials.MAT_LANTERN_GLOW);
+  addStaticMesh(buckets.MAT_FLOOR_COURTYARD, materials.MAT_FLOOR_COURTYARD, false);
+  addStaticMesh(buckets.MAT_WALL_ARCHITECTURAL, materials.MAT_WALL_ARCHITECTURAL, true);
+  addStaticMesh(buckets.MAT_COVER_TACTICAL, materials.MAT_COVER_TACTICAL, true);
+  addStaticMesh(buckets.MAT_CATWALK_METAL, materials.MAT_CATWALK_METAL, true);
+  addStaticMesh(roofBucket, materials.MAT_TERRACOTTA_ROOF, true);
+  addStaticMesh(woodBucket, materials.MAT_WOOD_TRIM, false);
+  addStaticMesh(stoneBucket, materials.MAT_STONE_TRIM, true);
+  addStaticMesh(foliageBucket, materials.MAT_FOLIAGE, false);
+  addStaticMesh(lanternBucket, materials.MAT_LANTERN_GLOW, false);
+
+  // Single merged Blender Workbench Cavity Crease Pass (1 draw call for entire map)
+  if (cavityEdgePositions.length > 0) {
+    const edgeGeo = new THREE.BufferGeometry();
+    edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(cavityEdgePositions, 3));
+    edgeGeo.computeBoundingSphere();
+    geometriesToDispose.push(edgeGeo);
+    const edgeLines = new THREE.LineSegments(edgeGeo, materials.MAT_CAVITY_EDGES);
+    edgeLines.matrixAutoUpdate = false;
+    edgeLines.updateMatrix();
+    group.add(edgeLines);
+  }
 
   // Buy Phase Energy Barriers
   const barriersGroup = new THREE.Group();

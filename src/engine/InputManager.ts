@@ -34,6 +34,7 @@ export class InputManager {
   private onToggleBuyMenu?: () => void;
   private onTogglePause?: () => void;
   private onToggleMute?: () => void;
+  private onSkipBuyPhase?: () => void;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -41,12 +42,14 @@ export class InputManager {
       onToggleBuyMenu?: () => void;
       onTogglePause?: () => void;
       onToggleMute?: () => void;
+      onSkipBuyPhase?: () => void;
     } = {}
   ) {
     this.canvas = canvas;
     this.onToggleBuyMenu = callbacks.onToggleBuyMenu;
     this.onTogglePause = callbacks.onTogglePause;
     this.onToggleMute = callbacks.onToggleMute;
+    this.onSkipBuyPhase = callbacks.onSkipBuyPhase;
 
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
@@ -118,6 +121,13 @@ export class InputManager {
     if (code === 'KeyB') {
       if (document.body.dataset.state === 'playing') {
         this.onToggleBuyMenu?.();
+      }
+      return;
+    }
+
+    if (code === 'KeyF') {
+      if (document.body.dataset.state === 'playing') {
+        this.onSkipBuyPhase?.();
       }
       return;
     }

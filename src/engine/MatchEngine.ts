@@ -174,6 +174,7 @@ export class MatchEngine {
   private hostRemoteAckSeq = 0;
   private titleTourAngle = 0;
   private hudEmitAccum = 0;
+  private lastHudSig = '';
 
   public settings: PlayerSettings = this.loadSettings();
 
@@ -227,6 +228,7 @@ export class MatchEngine {
       onToggleBuyMenu: () => this.toggleBuyMenu(),
       onTogglePause: () => this.togglePause(),
       onToggleMute: () => this.toggleMute(),
+      onSkipBuyPhase: () => this.skipBuyPhase(),
     });
     this.applySettings(this.settings);
 
@@ -244,6 +246,7 @@ export class MatchEngine {
       renderUpdate: (alpha, frameTime) => this.renderUpdate(alpha, frameTime),
     });
 
+    this.rendererCtx.prewarm();
     document.body.dataset.state = 'title';
     this.loop.start();
     this.emitHud();
@@ -420,6 +423,11 @@ export class MatchEngine {
       this.input.requestPointerLock();
     }
     this.emitHud();
+  }
+
+  public skipBuyPhase(): void {
+    if (this.appState !== 'playing' || this.mode !== 'BOT' || this.phase !== 'BUY') return;
+    this.phaseTimer = 0.01;
   }
 
   private resetMatchState(): void {
@@ -1371,7 +1379,13 @@ export class MatchEngine {
       this.rendererCtx.camera.position.set(camX, 7.5, camZ);
       this.rendererCtx.camera.lookAt(0, 1.4, -2.0);
     } else {
-      this.localPlayer.updateCamera(this.rendererCtx.camera, alpha, frameTime);
+      this.localPlayer.updateCamera(
+        this.rendererCtx.camera,
+        alpha,
+        frameTime,
+        this.input.yaw,
+        this.input.pitch
+      );
 
       const spec = this.localPlayer.weapons.getActiveSpec();
       const recOut = this.localPlayer.recoil.getOutput(this.localPlayer.state.crouchAlpha > 0.5);
@@ -1415,9 +1429,15 @@ export class MatchEngine {
     this.rendererCtx.renderFrame();
 
     this.hudEmitAccum += frameTime;
-    if (this.hudEmitAccum >= 0.1) {
+    if (this.hudEmitAccum >= 0.4) {
       this.hudEmitAccum = 0;
-      this.emitHud();
+      const inv = this.localPlayer.weapons.getActiveSlot();
+      const fpsBucket = Math.round((this.loop?.measuredFps ?? 60) / 2) * 2;
+      const sig = `${this.appState}|${this.phase}|${this.roundNum}|${Math.ceil(Math.max(0, this.phaseTimer))}|${this.score[0]}:${this.score[1]}|${Math.round(this.localPlayer.hp)}|${Math.round(this.localPlayer.shield)}|${this.localPlayer.credits}|${inv.id}|${inv.mag}/${inv.reserve}|${this.localPlayer.weapons.reloadTimer > 0 ? 1 : 0}|${this.buyMenuOpen ? 1 : 0}|${this.input.isPointerLocked ? 1 : 0}|${fpsBucket}|${this.roundBanner}|${this.killFeed.length}`;
+      if (sig !== this.lastHudSig) {
+        this.lastHudSig = sig;
+        this.emitHud();
+      }
     }
   }
 
@@ -1492,6 +1512,7 @@ export class MatchEngine {
     this.input.dispose();
     this.network.disconnect();
     this.viewmodel.dispose();
+    this.remotePlayer.rig.dispose();
     this.map.dispose();
     this.materials.dispose();
     this.rendererCtx.dispose();

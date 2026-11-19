@@ -129,6 +129,7 @@ export default function App() {
         }}
         onOpenSettings={() => engineRef.current?.togglePause()}
         onOpenBuyMenu={() => engineRef.current?.toggleBuyMenu()}
+        onSkipBuyPhase={() => engineRef.current?.skipBuyPhase()}
       />
 
       {/* Tactical Buy Menu */}
